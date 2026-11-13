@@ -1,7 +1,7 @@
-"""Render cesspool.lol as static files from the block records."""
+"""Render the site as static files from the block records."""
 import collections, datetime, functools, gzip, hashlib, html, json, math, os, re, shutil, subprocess, tempfile, textwrap, time, traceback
 
-from . import address, api, classify, found, miner
+from . import address, api, classify, found, local, miner
 from .types import TYPES, info, KNOTS, PLUMB, NONE, ALLOWED, NOT_SPAM, KNOWN, DATACARRIER
 
 HOME = os.environ.get("CESSPOOL_HOME", os.path.expanduser("~/.cesspool"))
@@ -12,7 +12,9 @@ OG_DRAWN = f"{HOME}/og.json"   # sha256 of the SVG behind each share image; dele
 API_PENDING = f"{HOME}/api-pending.json"  # the API thousands a build died in (api.py)
 SRC = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FILTERS = os.environ.get("PLUMB_FILTERS", os.path.expanduser("~/src/plumb/plumb/filters.json"))
-SITE = "https://cesspool.lol"
+SITE = local.SITE  # this install's own address, empty when it has none: links to it are relative then
+CONF_SITE = SITE or local.UPSTREAM  # a bitcoin.conf is read away from the site, so its comments need a whole address
+SHARE = SITE or "{origin}"  # in a share link; site.js puts the address the page was opened at in its place
 PLUMB_REPO = "https://github.com/plumb-node/plumb"
 PLUMB_RELEASE = "https://github.com/plumb-node/plumb/releases/latest"
 INSTALLER = "https://github.com/jasonsopko/knots-datum-node"
@@ -501,6 +503,7 @@ def barcell(x, mx, color="var(--sewage)"):
 
 
 def plumb_cta(headline="Run Plumb and this stays out of your blocks.", body=None):
+    return ""  # Cesspool Pruned leaves the card out; what follows is upstream's, kept so merges stay simple
     body = body or ("Plumb is Bitcoin Knots with every reviewed spam filter on by default. It is a drop-in replacement: "
                     "same binaries, same config file, same data directory. Payments pass. Data storage does not.")
     return f'''<div class="plumbcta">{PLUMB_MARK}<div>
@@ -513,34 +516,37 @@ def page(path, title, body, *, nav="", desc="", og=None, tip=None):
     nav_items = [("blocks", "/blocks/", "Blocks"), ("found", "/found/", "Your Blocks"), ("shame", "/shame/", "Hall of Shame"), ("past", "/past-defaults/", "Past the Defaults"),
                  ("check", "/check/", "Check Node"), ("guide", "/guide/", "Field Guide"), ("plumb", "/plumb/", "Plumb"), ("about", "/about/", "About"),
                  ("address", "/address/", "Address Lookup")]  # last, so it does not push Plumb out of view
+    nav_items = local.nav(nav_items)
     navh = "".join(f'<a href="{u}"{" class=\"on\"" if k == nav else ""}>{t}</a>' for k, u, t in nav_items)
-    full_title = f"{title} · cesspool.lol" if title else "cesspool.lol · Bitcoin water quality, block by block"
+    full_title = f"{title} · {local.BRAND}" if title else f"{local.BRAND} · Bitcoin water quality, block by block"
     foot_tip = f'Tip {tip["h"]}, {tm(tip["t"])}. ' if tip else ""
     # Summary pages reload themselves when a new block lands; block, transaction, Your Blocks, Address Lookup, about and privacy pages do not.
-    live = tip and not path.startswith("/block/") and path not in ("/tx/", "/found/", "/address/", "/about/", "/privacy/", "/404")
-    body_attr = f' data-tip="{tip["h"]}"' if live else ""
+    live = tip and not path.startswith("/block/") and path not in ("/tx/", "/found/", "/address/", "/about/", "/privacy/", "/404") + local.STILL_PAGES
+    body_attr = (f' data-tip="{tip["h"]}"' if live else "") + local.body_attrs()
     return f'''<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{esc(full_title)}</title>
 <meta name="description" content="{esc(desc)}">
-<meta property="og:title" content="{esc(title or "cesspool.lol")}"><meta property="og:description" content="{esc(desc)}">
-<meta property="og:image" content="{SITE}{og}"><meta property="og:url" content="{SITE}{path}"><meta property="og:type" content="website">
-<meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="{SITE}{og}">
-<link rel="icon" href="/static/favicon.svg" type="image/svg+xml"><link rel="alternate" type="application/atom+xml" title="Foul and raw-sewage blocks" href="/feed.xml"><link rel="stylesheet" href="/static/site.css?v={ASSET_V}">
+<meta property="og:title" content="{esc(title or local.BRAND)}"><meta property="og:description" content="{esc(desc)}">
+<meta property="og:type" content="website">{local.og_meta(esc, og, path)}
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml"><link rel="alternate" type="application/atom+xml" title="Foul and raw-sewage blocks" href="/feed.xml"><link rel="stylesheet" href="/static/site.css?v={ASSET_V}"><link rel="stylesheet" href="/static/local.css?v={ASSET_V}">
 </head><body{body_attr}>
-<header class="top"><div class="wrap"><a class="brand" href="/">{LOGO}<span>cesspool<span class="tld">.lol</span></span></a>
+<header class="top"><div class="wrap"><a class="brand" href="/">{LOGO}{local.brand_html()}</a>
 <nav class="main">{navh}</nav><span class="spacer"></span>
 <form class="jump" role="search"><input placeholder="Height, txid, address, name" aria-label="Go to a block height or a transaction id, look up an address, or find the blocks of a pool or coinbase tag"></form></div></header>
 <main class="wrap">{body}</main>
 <footer><div class="wrap"><div>Verdicts from the policy code in {PLUMB_VERSION}, run on every transaction.<br>
 {foot_tip}Pool names follow <a href="https://reorg.watch">reorg.watch</a>.</div>
-<div>We never display what spam carries.<br><a href="/about/">How this works</a> · <a href="/privacy/">Privacy</a> · <a href="https://github.com/jasonsopko/cesspool">Source</a></div>
-<a class="discord" href="https://discord.gg/QxhQMdxrJ7"><img src="/static/beh-discord.png?v={ASSET_V}" width="28" height="28" alt=""><span>Bitcoin Education Hub on Discord: discuss Bitcoin openly, without being banned for your ideas.</span></a></div></footer>
-<script src="/static/site.js?v={ASSET_V}" defer></script></body></html>
+<div>We never display what spam carries.<br><a href="/about/">How this works</a> · <a href="/privacy/">Privacy</a> · <a href="{local.REPO}">Source</a></div>
+{local.footer_html()}</div></footer>
+<script src="/static/site.js?v={ASSET_V}" defer></script>{local.scripts(path, ASSET_V)}</body></html>
 '''
 
 
 ASSET_V = "38"
+
+
+ASSET_V = local.asset_version(SRC, ASSET_V)  # upstream's number and a digest of the files, so a change to either reaches browsers
 
 
 def write(out, rel, text):
@@ -590,7 +596,8 @@ def io_html(rows, kind, limit=8, missed=False):
 
 # Bitcoin Core is graded too (plumb_check's core profile) but not shown: it does not accept block 961640
 # or any block after it, so no Core node has these blocks.
-VERDICT_NAMES = [("knots", KNOTS_NAME), ("plumb", PLUMB_NAME)]
+# That is the BLAKE2b chain. On the SHA256 chain Core follows every block, and local.verdicts adds it.
+VERDICT_NAMES = local.verdicts([("knots", KNOTS_NAME), ("plumb", PLUMB_NAME)])
 
 
 def source_link(opt):
@@ -730,7 +737,7 @@ def verdict_html(s):
     cells = []
     for k, name in VERDICT_NAMES:
         rs = s["v"][k]
-        dc = (s.get("dc") or {}).get(k)
+        dc = (s.get("dc") or {}).get(k) if k in DATACARRIER_SIZE else None  # Core has no data count to show
         total = sum(dc) if dc else 0
         data_rs = [r for r in rs if classify.DATA_REASONS.match(r)]
         if rs:
@@ -900,7 +907,7 @@ def block_page(rec, s, prev_h, next_h, tip):
 <div class="meta"><span>{by_html(rec)[0].upper() + by_html(rec)[1:]}</span><span>{tm(rec["t"])}</span><span><b class="num">{n(rec["ntx"])}</b> transactions</span>
 <span><b class="num">{rec["w"] / 4e6 * 100:.0f}%</b> full</span><span>Fees <b class="num">{btc(total_fees)}</b> BTC</span></div>
 <p style="margin-top:14px;max-width:70ch">{verdict}</p>{past_line}{dtm_line(rec)}
-<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">{nav}<button class="copy" data-copy="{esc(share_text)} {SITE}/block/{rec["h"]}/">Copy share link</button></div></div>
+<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">{nav}<button class="copy" data-copy="{esc(share_text)} {SHARE}/block/{rec["h"]}/">Copy share link</button></div></div>
 <div class="stampbox">{stamp(s["grade"])}</div></div>
 <div class="mapbox"><canvas id="map" aria-label="Map of every transaction in the block, sized by virtual size"></canvas><div class="tip"></div></div>
 <div class="legend"><span><i style="background:var(--water);opacity:.55"></i>Payment</span><span><i style="background:var(--gray)"></i>Gray water (small note)</span>
@@ -949,7 +956,7 @@ RULES = {
 def tx_page(tip):
     body = f'''<div id="txapp" data-plumb="{esc(PLUMB_NAME)}">
 <div class="hero"><div class="kicker">Transaction</div><h1>Look up a transaction</h1>
-<p class="lede">Paste a transaction id from any block, height {FORK} on. The page shows what the transaction does, what it carries, and what Knots and {esc(PLUMB_NAME)} would do with it.</p></div>
+<p class="lede">Paste a transaction id from any block, height {local.first()} on. The page shows what the transaction does, what it carries, and what Knots and {esc(PLUMB_NAME)} would do with it.</p></div>
 <form class="txform"><input class="mono" spellcheck="false" autocomplete="off" placeholder="Transaction id (64 hex characters)" aria-label="Transaction id"><button class="btn">Look up</button></form>
 <div class="txout" aria-live="polite"></div>
 <noscript><p class="muted">This page needs JavaScript to load the transaction.</p></noscript></div>'''
@@ -1123,8 +1130,8 @@ def shame_pane(idx, key, label, seconds, min_blocks):
 
 
 def shame_page(idx, tip):
-    tabs = "".join(f'<button data-pane="w-{k}"{" class=on" if k == "7d" else ""}>{l}</button>' for k, l, _, _ in WINDOWS)
-    panes = "".join(shame_pane(idx, k, l, s, m) for k, l, s, m in WINDOWS)
+    tabs = "".join(f'<button data-pane="w-{k}"{" class=on" if k == "7d" else ""}>{l}</button>' for k, l, _, _ in local.windows(WINDOWS))
+    panes = "".join(shame_pane(idx, k, l, s, m) for k, l, s, m in local.windows(WINDOWS))
     body = f'''<div class="hero"><div class="kicker">Hall of Shame</div><h1>Who is mining the sewage</h1>
 <p class="lede">Pools ranked by how much of their block space went to spam. A pool lands here by choosing what goes into its blocks, and it gets off the list the same way.</p>
 <p class="small muted" style="margin-top:8px">Blocks holding transactions that Knots and Plumb refuse at their defaults are listed on <a href="/past-defaults/">Past the defaults</a>.</p></div>
@@ -1306,13 +1313,13 @@ def conf_stricter(prog):
             "The default. It refuses data outside OP_RETURN, which includes a push that a script drops unused. "
             f"In the same blocks it also refuses {n(k['flyover'])} Rootstock PowPeg spends of Flyover deposits, "
             "whose scripts start with a 32-byte value dropped that way. cesspool.lol does not count those as "
-            f"sewage: {SITE}/about/#bar."),
+            f"sewage: {CONF_SITE}/about/#bar."),
         "subdustfeepenalty": conf_comment(
             "The default. With it, a version 3 transaction that pays no fee and carries a pay-to-anchor output of at "
             "most 240 sat is refused even beside a child that pays for both: the package Lightning's zero-fee "
             "commitment channels use. It relays only with subdustfeepenalty=0 and mempooltruc=enforce, plus "
             "permitephemeral=anchor,-send,dust when the anchor holds 1 to 239 sat; the Lightning file at "
-            f"{SITE}/check/#lightning sets all three. None was mined from block {LN_FACTS['lo']} to {LN_FACTS['hi']}."),
+            f"{CONF_SITE}/check/#lightning sets all three. None was mined from block {LN_FACTS['lo']} to {LN_FACTS['hi']}."),
         "permitbaredatacarrier": conf_comment(
             "The default. It refuses a transaction whose only output is an OP_RETURN. In the same blocks it "
             f"also refuses {n(k['sweeps'])} sweeps of Lightning anchors and other dust into fees, whose OP_RETURN "
@@ -1336,7 +1343,7 @@ def conf_stricter(prog):
             f"transactions, and {fake_who}. 51 would refuse {n(g['fake_value'])} of them on its own and nothing "
             f"else; nothing that is not sewage is refused below {g['nearest']}. It stays as a second check that "
             "depends on neither the key count nor the file format: a reveal with ten or fewer unused keys in each "
-            f"script and no BPUB header passes both Knots rules. {SITE}/check/#fake-multisig says more."),
+            f"script and no BPUB header passes both Knots rules. {CONF_SITE}/check/#fake-multisig says more."),
     }
 
 
@@ -1361,7 +1368,7 @@ def recommended_conf(prog):
                   "package-size, unknown-witness and bare-anchor settings are left alone. A corepolicy=1 set elsewhere "
                   "still changes settings this file does not set, such as the minimum relay fee.")
         files = "settings.json and bitcoin_rw.conf in the data directory win over this file, as does the command line."
-    lines = [f"# Recommended bitcoin.conf for {CONF_NAMES[prog]}", f"# {SITE}/check/", "#"] + conf_comment(
+    lines = [f"# Recommended bitcoin.conf for {CONF_NAMES[prog]}", f"# {CONF_SITE}/check/", "#"] + conf_comment(
         intro,
         "If your bitcoin.conf already sets one of these options, or turns one off with a no line such as "
         "nodatacarrier=1, change or remove that line rather than adding a second one: with two lines, which "
@@ -1394,7 +1401,7 @@ def aggressive_conf():
             "Where the line falls depends on the keys, signatures, coins and outputs. A segwit 2-of-15 spend still "
             "relays: "
             f"one of 200 coins comes in at about 55.2 and one of a single coin at about 69. "
-            f"{SITE}/check/#fake-multisig says more."),
+            f"{CONF_SITE}/check/#fake-multisig says more."),
         "dustrelayfee": conf_comment(
             "The default is 0.00003, which is 3 sats a vbyte, and this file sets 5. Knots refuses a transaction "
             "that creates dust, an output worth less than the fee to spend it at this rate: at "
@@ -1412,7 +1419,7 @@ def aggressive_conf():
             "through this node has a payment or change output that small refused the same way."),
     }
     lines = [f"# Aggressive bitcoin.conf for {CONF_NAMES['knots']}",
-             "# Not the recommended file: it refuses ordinary transactions too.", f"# {SITE}/check/#aggressive", "#"]
+             "# Not the recommended file: it refuses ordinary transactions too.", f"# {CONF_SITE}/check/#aggressive", "#"]
     lines += conf_comment(
         "This is the recommended Knots file, which already sets datacarriersize, datacarriercost and "
         f"bytespersigopstrict stricter than the defaults, with bytespersigopstrict raised from {g['value']} to "
@@ -1516,7 +1523,7 @@ def lightning_conf(prog):
                "bare-anchor settings are left alone. A corepolicy=1 set elsewhere still changes settings this file "
                "does not set, such as the minimum relay fee.")
         files = "settings.json and bitcoin_rw.conf in the data directory win over this file, as does the command line."
-    lines = [f"# bitcoin.conf for {CONF_NAMES[prog]} behind a Lightning node", f"# {SITE}/check/", "#"] + conf_comment(
+    lines = [f"# bitcoin.conf for {CONF_NAMES[prog]} behind a Lightning node", f"# {CONF_SITE}/check/", "#"] + conf_comment(
         f"The recommended {name} file with three lines changed, subdustfeepenalty=0, mempooltruc=enforce and "
         "permitephemeral=anchor,-send,dust, and the dust fee settings written out at their defaults. A Lightning "
         "node that opens zero-fee commitment channels needs the three lines: LDK 0.2 and later can open them "
@@ -1731,7 +1738,8 @@ def fake_multisig_section():
 def check_page(tip):
     grep_umbrel = f"{SETTINGS_GREP} {UMBREL_LOG}"
     body = f'''<div class="hero"><div class="kicker">Check your node</div><h1>Is your node filtering?</h1>
-<p class="lede">Knots and Plumb refuse spam at their default settings. A setting changed anywhere, or one a node package ships with, can turn a filter off without saying so. Here is how to check.</p></div>
+<p class="lede">Knots and Plumb refuse spam at their default settings. A setting changed anywhere, or one a node package ships with, can turn a filter off without saying so. Here is how to check.</p>
+{local.measured_note(CONF_FACTS["lo"], max(CONF_FACTS["hi"], LN_FACTS["hi"]))}</div>
 <h2>Recommended settings</h2>
 <p style="max-width:75ch">The recommended settings are the ones in the <a href="#settings">bitcoin.conf files below</a>, with the data size at 42 bytes, the data cost at 2 and bytes per sigop strict at 51, all stricter than Knots&#39; defaults of 83, 1 and 20. Plumb&#39;s own default data size is 42 since plumb7. The last one is a second check against <a href="#fake-multisig">fake multisig</a>, which Knots refuses by default since 29.4.3. Here they are on each platform, under the names each one uses. Where a platform starts a switch somewhere else, it says so. A stricter value you chose on purpose, such as turning OP_RETURN data off altogether, is fine to keep.</p>
 <h3>Umbrel</h3>
@@ -2026,7 +2034,7 @@ The gateway&#39;s node chooses the transactions, normally the miner&#39;s own, s
         operator = f'''<div class="panel" style="margin-top:22px"><h3>Clean record</h3><p>{f"No block a DATUM miner built through {esc(base)} carried" if dtm else f"{esc(name)} has not mined"} a single sewage transaction {"in the last 30 days" if p30 else "since the fork"}. That is what this page is for.</p></div>'''
     body = f'''<div class="bhead"><div class="t"><div class="kicker">Inspection report</div><h1>{esc(name)}</h1>
 <div class="meta"><span><b class="num">{n(pall["blocks"])}</b> blocks since the fork</span><span>last block <a href="/block/{recent[0]["h"]}/">{recent[0]["h"]}</a> {tm(recent[0]["t"])}</span></div>
-{intro}<p style="margin-top:12px"><button class="copy" data-copy="{esc(name)}: grade {L} at cesspool.lol. {pct(cur["share"], 2)} of its block space is spam. {SITE}/pool/{miner.slug(name)}/">Copy share link</button></p></div>
+{intro}<p style="margin-top:12px"><button class="copy" data-copy="{esc(name)}: grade {L} at {local.BRAND}. {pct(cur["share"], 2)} of its block space is spam. {SHARE}/pool/{miner.slug(name)}/">Copy share link</button></p></div>
 <div class="stampbox" style="text-align:center"><span class="letter gr-{L}">{L}</span><div class="small muted" style="margin-top:10px">{LETTER_TEXT[L]}</div></div></div>
 {tiles}
 {share_note}
@@ -2133,13 +2141,13 @@ def plumb_page(idx, tip):
 
 
 def found_page(tip):
-    body = f'''<div id="foundapp" data-fork="{FORK}">
+    body = f'''<div id="foundapp" data-fork="{local.first()}">
 <div class="hero"><div class="kicker">Your blocks</div><h1>Find the blocks you mined</h1>
 <p class="lede">Type a payout address, a pool name or the text in your coinbase. The page lists every block since the fork that matches, graded, and grades the lot the way the Hall of Shame grades a pool.</p></div>
 <form class="txform foundform"><input spellcheck="false" autocomplete="off" placeholder="Payout address, pool name or coinbase tag" aria-label="Payout address, pool name or coinbase tag"><button class="btn">Find</button></form>
 <div class="foundout" aria-live="polite"></div>
 <div class="prose foundhelp"><h2>What finds what</h2>
-<ul><li><b>Pool operators:</b> the pool's name as this site shows it, from Kilombino's pools list. The result holds every block mined through the pool, including the ones that DATUM miners' own gateways built.</li>
+<ul><li><b>Pool operators:</b> the pool's name as this site shows it, from {local.pools_short()}. The result holds every block mined through the pool, including the ones that DATUM miners' own gateways built.</li>
 <li><b>DATUM miners:</b> the second coinbase tag, which you set as <code>coinbase_tag_secondary</code> in your gateway's config. Anyone can write any tag, and the default, <code>DATUM User</code>, is shared by everyone who left it.</li>
 <li><b>Solo miners, and miners paid in the coinbase:</b> your payout address. A pool that pays whoever found the block puts your address in that block. A pool that pays every miner a share in the coinbase puts it in blocks you did not find, and the result says so. A pool that holds rewards and pays later never puts it in a coinbase: look that pool up by name.</li></ul>
 <p class="small muted">What you type stays after the # in this page's address, which your browser never sends to the server. A height or a transaction id opens that page instead, and the server logs it like any page. <a href="/privacy/">What the server logs</a>.</p></div>
@@ -2156,7 +2164,7 @@ def address_page(tip, counts):
         held += (f" Of the {n(tok)} addresses since the fork that runestones or Counterparty enhanced sends pointed to, {n(own)} ({pct(own / tok)}) "
                  "were pointed to at least once by a transaction that also spent from that address.")
     names = json.dumps({t: i["name"] for t, i in TYPES.items()}, separators=(",", ":"))
-    body = f'''<div id="addrapp" data-fork="{FORK}" data-types="{esc(names)}">
+    body = f'''<div id="addrapp" data-fork="{local.first()}" data-types="{esc(names)}">
 <div class="hero"><div class="kicker">Address lookup</div><h1>Has this address handled sewage?</h1>
 <p class="lede">Type a Bitcoin address. The page lists every sewage transaction since the fork that spent from it, paid it, or pointed runes or a Counterparty enhanced send at it.</p></div>
 <form class="txform foundform"><input spellcheck="false" autocomplete="off" placeholder="Bitcoin address" aria-label="Bitcoin address"><button class="btn">Look up</button></form>
@@ -2167,7 +2175,7 @@ def address_page(tip, counts):
 <li><b>Counterparty receiver:</b> a Counterparty send in the transaction names this address as the receiver. If Counterparty accepted the send, it keeps that balance on the address until the owner sends it on. This site does not check whether it did.</li>
 <li><b>Got bitcoin:</b> the transaction paid this address and none of the above applies. This site cannot tell a plain payment from a token in a protocol it does not read, and swap services, exchanges and anyone being paid end up here, so this alone says nothing about the owner.</li></ul>
 <p>{esc(held)}</p>
-<p class="small muted">The list covers what this site grades as sewage, from block {FORK} on. No match means none of those transactions touched the address, not that the address is clean. Outputs that are themselves the data, such as fake addresses made of data, are left out, and so are pay-to-anchor outputs, which anyone can spend. Tokens are read from runestones and from Counterparty's enhanced sends. A receiver named in any other Counterparty message is not listed as a Counterparty receiver, and payments in other token protocols show as Got bitcoin.</p>
+<p class="small muted">The list covers what this site grades as sewage, from block {local.first()} on. No match means none of those transactions touched the address, not that the address is clean. Outputs that are themselves the data, such as fake addresses made of data, are left out, and so are pay-to-anchor outputs, which anyone can spend. Tokens are read from runestones and from Counterparty's enhanced sends. A receiver named in any other Counterparty message is not listed as a Counterparty receiver, and payments in other token protocols show as Got bitcoin.</p>
 <p class="small muted">What you type stays after the # in this page's address, which your browser never sends to the server. The page downloads two files, one of 256 sewage files and one of 256 coinbase payout files, both picked by the same hash of the address, so the server log holds those file names next to your IP address, not the address. Opening a transaction or a block from the result loads that page, and the server logs it like any other. <a href="/privacy/">What the server logs</a>.</p></div>
 <noscript><p class="muted">This page needs JavaScript to search.</p></noscript></div>'''
     return page("/address/", "Address lookup", body, nav="address", desc="Look up a Bitcoin address: every sewage transaction since the fork that spent from it, paid it, or pointed runes or a Counterparty enhanced send at it.", tip=tip)
@@ -2208,7 +2216,7 @@ def about_page(idx, tip):
 <p class="lede">Every block since the fork at height {FORK}, every transaction in it, run through the Knots and Plumb policy checks.</p></div>
 <div class="prose">
 <h2>Verdicts come from the shipped code</h2>
-<p>Each transaction, with the coins it spends, goes through the policy checks of {PLUMB_VERSION}: <code>IsStandardTx</code>, <code>AreInputsStandard</code>, the data-carrier count, <code>IsWitnessStandard</code> and the sigop limits, once with each software's default policy: stock {KNOTS_NAME} (Plumb's two own filters off, <code>permitlnrevokeleaf=0</code>, and <code>datacarriersize</code> at Knots' {DATACARRIER_SIZE["knots"]}) and Plumb (<code>datacarriersize</code> at {DATACARRIER_SIZE["plumb"]}, its default since plumb7). For Plumb the engine also runs the policy script check, as the node does, and counts the multisig keys again, crediting only those a signature verified against (knots#470); {KNOTS_NAME} has no such recount. Bitcoin Core is not compared: it does not accept block {FORK} or any block after it, so no Core node has these blocks. Nothing here reimplements a filter, so this page and a Plumb node cannot disagree about a transaction.</p>
+<p>Each transaction, with the coins it spends, goes through the policy checks of {PLUMB_VERSION}: <code>IsStandardTx</code>, <code>AreInputsStandard</code>, the data-carrier count, <code>IsWitnessStandard</code> and the sigop limits, once with each software's default policy: stock {KNOTS_NAME} (Plumb's two own filters off, <code>permitlnrevokeleaf=0</code>, and <code>datacarriersize</code> at Knots' {DATACARRIER_SIZE["knots"]}) and Plumb (<code>datacarriersize</code> at {DATACARRIER_SIZE["plumb"]}, its default since plumb7). For Plumb the engine also runs the policy script check, as the node does, and counts the multisig keys again, crediting only those a signature verified against (knots#470); {KNOTS_NAME} has no such recount. {local.core_sentence(FORK, DATACARRIER_SIZE["knots"])} Nothing here reimplements a filter, so this page and a Plumb node cannot disagree about a transaction.</p>
 <p>Each refusal on a block or transaction page names the rule it comes from and the option behind it. Plumb's count is also taken with each of five data-counting rules turned off alone, and once with knots#470's recount from verified keys left out, so the bytes a rule is responsible for come from the code too (the sixth, <code>-rejecttokenmessages</code>, names itself in its reason), and a refusal that rests on Knots' own rules says so. So does one that rests on Plumb's {DATACARRIER_SIZE["plumb"]}-byte limit: the count is taken again with the limit at Knots' {DATACARRIER_SIZE["knots"]}.</p>
 <p>Where Knots or Plumb relays a transaction shown here, the engine also tries four settings one at a time and keeps the value that would refuse it: the largest <code>datacarriersize</code>; the largest <code>maxscriptsize</code> of {MIN_USEFUL_SCRIPT_LIMIT} or more, the size of the largest push a script may hold, since a limit below that starts refusing ordinary multisig witnesses (a 3-of-5 P2WSH witness is about 395 bytes); the smallest <code>bytespersigopstrict</code> up to {MAX_USEFUL_SIGOP_STRICT}, since above that it starts refusing segwit 2-of-15 spends (a 2-of-15 P2WSH input has about 55 weight units for each of its 15 signature checks; multisig with many keys and few signatures can be refused lower); and the smallest <code>dustrelayfee</code> up to {feerate_conf(MAX_DUST_RATE)} (100 sat/vB, where a P2TR output under 11,000 sat is already dust; higher rates were not tried). Each value comes from rerunning the same checks with only that setting changed. A setting that refuses the transaction at no value in its range is left out, and a verdict that offers none names the four that were tried.</p>
 <p>Not modeled: fee floors, mempool limits, replacement rules and address reuse. Those depend on the mempool at the time, not on what the transaction carries.</p>
@@ -2232,7 +2240,7 @@ def about_page(idx, tip):
 <ul><li><a href="/guide/#ln-anchor-sweep">Sweeps</a> ({n(tn("ln-anchor-sweep", "p2a-sweep", "dust-sweep"))} since the fork): Lightning anchors, pay-to-anchor outputs and other dust spent into fees, with nothing but an OP_RETURN of {classify.SWEEP_PAD} bytes or less. Knots refuses a transaction whose only output is an OP_RETURN.</li>
 <li><a href="/guide/#powpeg-flyover">Rootstock PowPeg Flyover spends</a> ({n(tn("powpeg-flyover"))}): the federation moving a deposit whose script starts with a 32-byte value that it drops unused. Knots counts that push as data.</li></ul>
 <p>Each one is kept narrow. A sweep's OP_RETURN holds at most {classify.SWEEP_PAD} bytes, and a sweep whose inputs carry anything Plumb or cesspool counts stays sewage. A Flyover spend is recognized by the exact script every PowPeg spend since the fork reveals, so only the keys in that script can spend a match: 5 of its 9, or 3 of its 4 emergency keys after a long timelock.</p>
-<p>Plumb 6 also refused payments back to the vanity address one of the transaction's inputs spends from, reading the zeros in its hash as data. Plumb 7&#39;s <code>-rejectfakeoutputs</code> counts nothing in an output that pays the script of a coin the transaction spends: the spend proved the key or hash in it is real, and fitting chosen data into one would take at least 2<sup>128</sup> tries. Those payments now grade clean. Plumb 10&#39;s <code>-rejectfakeoutputs</code> also skips the leading zero bytes of a hash or key, when there are seven or fewer, before it looks for repeated bytes, so a payment to an address whose hash or key starts with six or seven zero bytes is no longer refused. {vanity_line()}</p>
+<p>Plumb 6 also refused payments back to the vanity address one of the transaction's inputs spends from, reading the zeros in its hash as data. Plumb 7&#39;s <code>-rejectfakeoutputs</code> counts nothing in an output that pays the script of a coin the transaction spends: the spend proved the key or hash in it is real, and fitting chosen data into one would take at least 2<sup>128</sup> tries. Those payments now grade clean. Plumb 10&#39;s <code>-rejectfakeoutputs</code> also skips the leading zero bytes of a hash or key, when there are seven or fewer, before it looks for repeated bytes, so a payment to an address whose hash or key starts with six or seven zero bytes is no longer refused. {vanity_line()}{local.MEASURED_ELSEWHERE}</p>
 <p>One kind stays sewage on purpose. A <a href="/guide/#liquid-emergency">Liquid-layout emergency spend</a> ({n(tn("liquid-emergency"))}) is very likely Liquid's own recovery, but every Liquid deposit tweaks the federation keys, so the layout cannot prove that the keys Plumb counts are real, and anyone could copy it.</p>
 <p>Protocols with defenders that do not pass have their case in the <a href="/guide/">field guide</a>, next to the reason they fail: inscriptions, Runes, JSON token messages, Stamps, Counterparty, Omni, BIP47 notifications, swap memos, and the tags Babylon, Core DAO and Stacks add. Babylon and Core DAO move real bitcoin to ordinary scripts, and that part passes; the tag beside it is a record for another chain.</p>
 <h2 id="known">How protocols are recognized</h2>
@@ -2242,58 +2250,25 @@ def about_page(idx, tip):
 <h2>What we never show</h2>
 <p>The payload. No images, no text, no file names. A spam transaction gets its type, its size and where the bytes sit. Displaying the contents is the service the spammer paid for.</p>
 <h2>Who mined it</h2>
-<p>Pools are named from the coinbase tag and payout addresses against Kilombino's pools-v2 list, with the same rules as <a href="https://reorg.watch">reorg.watch</a>. {esc(DATUM_NOTE)} Miners and pools can find their own blocks by payout address, pool name or coinbase tag on <a href="/found/">Your Blocks</a>.</p>
-<h2>Data</h2><p>One Plumb node's REST interface, checked every 2 seconds. Blocks replaced in a reorg are reprocessed.
+<p>Pools are named from the coinbase tag and payout addresses against {local.pools_list()}, with the same rules as <a href="https://reorg.watch">reorg.watch</a>. {esc(DATUM_NOTE)} Miners and pools can find their own blocks by payout address, pool name or coinbase tag on <a href="/found/">Your Blocks</a>.</p>
+<h2>Data</h2><p>Your own node's RPC interface, checked every 2 seconds. Blocks replaced in a reorg are reprocessed.
 The foul and raw-sewage blocks are also an <a href="/feed.xml">Atom feed</a>.</p>
+<h2 id="coverage">What this install covers</h2>{local.coverage_html(n)}{local.about_html(PLUMB_NAME, KNOTS_NAME)}
 <h2 id="api">API</h2>
 <p>For pools and sites that show a block&#39;s grade beside it. Plain JSON, read only:</p>
 <ul><li><code>/api/v1/block/&lt;height&gt;.json</code>: one block.</li>
-<li><code>/api/v1/blocks/&lt;n&gt;.json</code>: the blocks of one thousand, sorted by height, with <code>from</code> and <code>to</code>. <code>blocks/975.json</code> holds 975000 to 975999. The first is <code>961.json</code>, from {FORK}. Read these to backfill, or to catch up from a height.</li>
+<li><code>/api/v1/blocks/&lt;n&gt;.json</code>: the blocks of one thousand, sorted by height, with <code>from</code> and <code>to</code>. <code>blocks/975.json</code> holds 975000 to 975999. The first is <code>{local.first() // 1000}.json</code>, from {local.first()}. Read these to backfill, or to catch up from a height.</li>
 <li><code>/api/v1/tip.json</code>: the highest block graded here, as <code>height</code>, <code>hash</code> and <code>grader_version</code>.</li></ul>
 <p>A block has <code>height</code>, <code>hash</code>, <code>time</code> (the block&#39;s time), <code>grade</code>, <code>grade_label</code>, <code>sewage_share</code> (the share of the block&#39;s weight that is sewage, to 6 places), <code>sewage_tx</code> and <code>gray_tx</code> (how many sewage and gray water transactions), <code>weight</code>, <code>url</code> (its page here) and <code>grader_version</code>. The grade is <code>pristine</code>, <code>tainted</code>, <code>foul</code> or <code>raw</code>, as under Grades above, and <code>grade_label</code> is the name this site shows for it. A height not graded here gets a 404.</p>
 <p>A block near the tip can be replaced by a reorg, so key on the hash. Grades follow Plumb&#39;s rules, and the site can regrade. When <code>grader_version</code> changes, read the blocks files again; it is now <code>{GRADER_VERSION}</code>. If you cache, read them again about once a day as well.</p>
-<p>Please keep under 30 requests a minute, and credit cesspool.lol with a link to the block&#39;s page. <code>/d/</code> is internal to this site and changes without notice.</p>
+<p>These files describe the blocks graded by this install, which need not be every block: see <a href="#coverage">what it covers</a>. <code>/d/</code> is internal to this site and changes without notice.</p>
 </div>'''
-    return page("/about/", "About", body, nav="about", desc="How cesspool.lol grades blocks.", tip=tip)
+    return page("/about/", "About", body, nav="about", desc=f"How {local.BRAND} grades blocks.", tip=tip)
 
 
 def privacy_page(tip):
-    body = '''<div class="hero prose"><div class="kicker">Privacy</div><h1>What we keep</h1>
-<p class="lede">What this site records when you visit, and how long it keeps it.</p></div>
-<div class="prose">
-<h2>The server log</h2>
-<p>Every request that reaches our server goes into its access log with:</p>
-<ul><li>your IP address</li>
-<li>the date and time</li>
-<li>the address you asked for, including any block height or transaction id in it</li>
-<li>the page that linked you here, if your browser sends it</li>
-<li>your browser's user agent string</li></ul>
-<p>A request that fails can also go into the error log, with your IP address, the address you asked for and the page that linked you there.</p>
-<p>The access log is deleted after at most 15 days. The error log is cleared out the same way, but only on days that had errors, so its entries can stay longer. We open the logs only to look into problems with the site. We run no analytics on them, and we do not share or sell them.</p>
-<h2>Looking up a transaction, your blocks or an address</h2>
-<p>A transaction lookup puts the transaction id in the log next to your IP address. If you would rather not leave that link, look up your own transactions on your own node.</p>
-<p>On <a href="/found/">Your Blocks</a>, what you type stays after the # in the page's address, which your browser never sends, unless it is a block height or a transaction id, which opens that page like any other. A pool name or coinbase tag lookup downloads the whole name index, so the log shows only that you opened the page. An address lookup downloads the name index as well, then one of 256 address files, picked by a hash of the address, so the log holds that file's name next to your IP address, not the address. Either way the page then fetches one summary file for each thousand-block range the result falls in, and the log shows those too.</p>
-<p>On <a href="/address/">Address Lookup</a>, what you type also stays after the #. The page downloads one of 256 sewage files and one of 256 coinbase payout files, both picked by the same hash of the address, so the log holds those two file names next to your IP address, not the address. Opening a transaction or a block from the result loads that page, and the log shows it like any other.</p>
-<h2>Cloudflare</h2>
-<p>Requests to cesspool.lol go through Cloudflare first. Cloudflare:</p>
-<ul><li>sees your IP address and what you asked for</li>
-<li>adds its Web Analytics and bot-detection scripts to every page, but this site's security policy stops both from running in your browser</li>
-<li>asks your browser to report requests that fail</li>
-<li>can set its own cookies, for example when it checks whether a visitor is a bot</li>
-<li>shows us some of what it records in its dashboard, which can include IP addresses</li></ul>
-<p><a href="https://www.cloudflare.com/privacypolicy/">Cloudflare's privacy policy</a> covers what it keeps.</p>
-<h2>Everything else</h2>
-<ul><li>This site sets no cookies, and its own code runs no analytics. It has no accounts or ads.</li>
-<li>Every script, font and image comes from cesspool.lol. Nothing loads from other sites.</li>
-<li>Some pages check for a new block every 10 seconds while they are on screen, and again when you come back to the tab. Each check is logged like any other request.</li>
-<li>What you paste into <a href="/check/">Check Node</a> never leaves your browser.</li>
-<li>Your browser keeps two notes for this site: the tab you last picked, and the last block a page reloaded for. Neither is sent to us.</li>
-<li>Links to other sites leave this one, and those sites have their own policies. Your browser tells them only that you came from cesspool.lol, not which page.</li></ul>
-<h2>Questions</h2>
-<p>Open an issue on <a href="https://github.com/jasonsopko/cesspool/issues">the site's GitHub repository</a>, where its source and its nginx configuration also live. If the logging changes, this page changes with it.</p>
-<p class="small muted">Updated 21 October 2026.</p>
-</div>'''
-    return page("/privacy/", "Privacy", body, desc="What cesspool.lol records when you visit, and how long it keeps it.", tip=tip)
+    # cesspool.lol's page describes its own server log and Cloudflare, neither of which is here.
+    return page("/privacy/", "Privacy", local.privacy_html(), desc=f"What this install of {local.BRAND} records, and what it sends anywhere.", tip=tip)
 
 
 def blocks_page(idx, tip):
@@ -2302,7 +2277,7 @@ def blocks_page(idx, tip):
                    f'<td>{stamp(idx[h]["grade"], True)}</td><td class="r num">{pct(idx[h]["share"]) if idx[h]["sn"] else ""}</td>'
                    f'<td class="r num">{n(idx[h]["sn"]) if idx[h]["sn"] else ""}</td><td class="r num">{n(idx[h]["gn"])}</td><td class="r num">{n(idx[h]["ntx"])}</td></tr>' for h in hs)
     body = f'''<div class="hero"><div class="kicker">Blocks</div><h1>The last two days of samples</h1>
-<p class="lede">Every block has a page. Use the box at the top to jump to any height since {FORK}, or <a href="/found/">find the blocks you mined</a> by payout address, pool name or coinbase tag.</p></div>
+<p class="lede">Every block has a page. Use the box at the top to jump to any height since {local.first()}, or <a href="/found/">find the blocks you mined</a> by payout address, pool name or coinbase tag.</p></div>
 <div class="strip">{"".join(cube_link(idx[h]) for h in hs[:16])}</div>
 <div class="tw"><table><tr><th>Block</th><th>Time</th><th>Pool</th><th>Grade</th><th class="r">Sewage</th><th class="r">Sewage txs</th><th class="r">Gray</th><th class="r">Txs</th></tr>{rows}</table></div>'''
     return page("/blocks/", "Blocks", body, nav="blocks", desc="Every Bitcoin block graded for spam.", tip=tip)
@@ -2328,18 +2303,7 @@ def index_page(idx, tip):
 <p>{pct(b["share"])} of the block is sewage: {n(b["sn"])} transactions, {size(b["sd"])} of payload{", mostly " + esc(info(b["top"][1])["name"].lower()) if b["top"] else ""}.</p>
 <p><a class="btn ghost" href="/block/{b["h"]}/">Dissect it</a></p></div>{stamp(b["grade"])}</div>'''
     honor = ", ".join(pool_link(p["pool"]) for p in honor7[:8])
-    tb = latest[0]
-    tl, _ = GRADE[tb["grade"]]
-    tline = (f'{pct(tb["share"])} sewage, {n(tb["sn"])} transaction{"s" if tb["sn"] != 1 else ""}.' if tb["sn"]
-             else ("Not one byte of data." if not tb["gn"] else f'No sewage. {n(tb["gn"])} small note{"s" if tb["gn"] != 1 else ""}.'))
-    body = f'''<div class="herogrid"><div class="hero"><div class="kicker">Bitcoin water quality, block by block</div>
-<h1><span>Clean blocks carry payments.</span> <span>The rest is sewage.</span></h1>
-<p class="lede">Every block since the fork, every transaction, tested with the policy code a Plumb node runs. See what got mined, who mined it, and which filter would have kept it out.</p>
-<p class="lede"><a href="/tx/">Look up any transaction</a> from height {FORK} on, or <a href="/found/">find the blocks you mined</a>.</p></div>
-<a class="sample" href="/block/{tb["h"]}/"><div class="kicker">Latest sample</div><div class="bigcube">{cube(tb)}</div>
-<div class="sh">Block {tb["h"]}</div><div class="muted small">{esc(short_who(tb))} · {tm(tb["t"])}</div>
-<div style="margin:12px 0 6px">{stamp(tb["grade"])}</div><div class="small muted">{tline}</div></a></div>
-<div class="strip">{"".join(cube_link(b) for b in latest[1:])}</div>
+    body = f'''<div class="strip home">{"".join(cube_link(b) for b in latest)}</div>
 <h2 style="margin-top:12px">Last 24 hours</h2>
 <div class="tiles"><div class="tile"><div class="v g-raw">{pct(t1["share"], 2)}</div><div class="l">of block space taken by sewage</div></div>
 <div class="tile"><div class="v">{n(t1["sn"])}</div><div class="l">sewage transactions mined</div></div>
@@ -2368,7 +2332,7 @@ def feed(idx):
 <summary>{plural(b["sn"], "spam transaction")}, {size(b["sd"])} of payload, {btc(b["sf"])} BTC in fees{", mined through " if who(b) != b["pool"] else " to "}{esc(b["pool"])}.</summary></entry>''' for b in bad)
     upd = iso(bad[0]["t"]) if bad else iso(time.time())
     return (f'''<?xml version="1.0" encoding="utf-8"?>
-<feed xmlns="http://www.w3.org/2005/Atom"><title>cesspool.lol: foul and raw-sewage blocks</title>
+<feed xmlns="http://www.w3.org/2005/Atom"><title>{esc(local.BRAND)}: foul and raw-sewage blocks</title>
 <link href="{SITE}/"/><link rel="self" href="{SITE}/feed.xml"/><id>{SITE}/feed.xml</id><updated>{upd}</updated>{entries}</feed>
 ''')
 
@@ -2380,7 +2344,7 @@ def og_svg(kind, **k):
     bg, fg, mut = "#0a1316", "#e4edee", "#8ea4a9"
     head = (f'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">'
             f'<rect width="1200" height="630" fill="{bg}"/>'
-            f'<text x="70" y="92" font-family="IBM Plex Mono" font-weight="600" font-size="34" fill="{fg}">cesspool<tspan fill="{mut}">.lol</tspan></text>')
+            f'<text x="70" y="92" font-family="IBM Plex Mono" font-weight="600" font-size="34" fill="{fg}">cesspool<tspan fill="{mut}"> pruned</tspan></text>')
     if kind == "block":
         b = k["b"]
         label, _ = GRADE[b["grade"]]
@@ -2466,9 +2430,9 @@ def save_og_drawn():
 def copy_static(out):
     sdir = os.path.join(out, "static")
     os.makedirs(f"{sdir}/fonts", exist_ok=True)
-    for name in ("site.css", "site.js", "check.js", "favicon.svg", "beh-discord.png"):
+    for name in ("site.css", "site.js", "check.js", "favicon.svg") + local.STATIC:
         shutil.copy2(os.path.join(SRC, "static", name), f"{sdir}/{name}")
-    fonts = os.path.expanduser("~/.local/share/fonts/plumb")
+    fonts = local.FONTS
     for name in ("IBMPlexSans.ttf", "IBMPlexMono-Regular.ttf", "IBMPlexMono-Medium.ttf"):
         if not os.path.exists(f"{sdir}/fonts/{name}"):
             shutil.copy2(f"{fonts}/{name}", f"{sdir}/fonts/{name}")
@@ -2485,6 +2449,7 @@ def build(out, heights=None, all_blocks=False, og=True, pages=False):
     idx, changed = load_index()
     if not idx:
         return
+    local.begin_build(idx, GRADER_VERSION)
     hs = sorted(idx)
     tip = idx[hs[-1]]
     copy_static(out)
@@ -2589,10 +2554,11 @@ def build(out, heights=None, all_blocks=False, og=True, pages=False):
         render_png(og_svg("shame", ranked=ranked), f"{out}/og/shame.png")
     write(out, "feed.xml", feed(idx))
     write(out, "robots.txt", "User-agent: *\nDisallow: /api/\nAllow: /\n")
-    write(out, "404.html", page("/404", "Not found", '<div class="hero"><h1>Nothing down here</h1><p class="lede">That page does not exist. <a href="/">Back to the surface</a>.</p></div>', tip=tip))
+    write(out, "404.html", page("/404", "Not found", '<div class="hero"><h1>Nothing down here</h1><p class="lede">That page does not exist. <a href="/">Back to the surface</a>.' + local.not_found_html() + '</p></div>', tip=tip))
     save_og_drawn()
     # After every page that reloads itself, so a page that sees the new tip reloads into pages that already show it.
     write(out, "tip.json", json.dumps({"h": tip["h"]}) + "\n")
     # After the tip: a block of fake multisig reveals touches nearly every address file, a few seconds the
     # block pages need not wait for, and Address Lookup does not reload itself.
     write(out, "address/index.html", address_page(tip, address.publish(out, idx)))
+    local.end_build(out, idx, tip, page)

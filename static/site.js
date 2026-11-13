@@ -88,7 +88,8 @@
   // Copy buttons
   document.querySelectorAll("button.copy[data-copy]").forEach(function (b) {
     b.addEventListener("click", function () {
-      var text = b.getAttribute("data-copy");
+      // A share link from an install with no address of its own carries {origin} for it.
+      var text = b.getAttribute("data-copy").replace("{origin}", location.origin);
       var done = function () { var o = b.textContent; b.textContent = "Copied"; setTimeout(function () { b.textContent = o; }, 1400); };
       if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, function () {});
     });

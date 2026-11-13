@@ -1,29 +1,24 @@
 #!/usr/bin/env python3
-"""Cache REST blocks (with prevouts) as gzipped JSON: fetch_raw.py FROM TO [DIR]."""
-import gzip, json, os, sys, urllib.request
+"""Cache blocks (with prevouts) as gzipped JSON, as update.py stores them: fetch_raw.py FROM TO.
 
-REST = "http://127.0.0.1:8332/rest"
+Reads the node over JSON-RPC with the settings update.py uses (CESSPOOL_RPC_URL and the rest; see
+cesspool/local.py). A block the node has pruned is rebuilt through the Electrum server when one is
+set, and skipped otherwise."""
+import os, sys
 
-
-def get(path, timeout=60):
-    with urllib.request.urlopen(f"{REST}/{path}", timeout=timeout) as r:
-        return r.read()
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from cesspool import local  # noqa: E402
 
 
 def main():
     lo, hi = int(sys.argv[1]), int(sys.argv[2])
-    out = sys.argv[3] if len(sys.argv) > 3 else os.path.join(os.environ.get("CESSPOOL_HOME", os.path.expanduser("~/.cesspool")), "raw")
-    os.makedirs(out, exist_ok=True)
+    local.prepare()
+    local.tip()
     for h in range(lo, hi + 1):
-        path = f"{out}/{h}.json.gz"
+        path = f"{local.RAW}/{h}.json.gz"
         if os.path.exists(path):
             continue
-        bh = json.loads(get(f"blockhashbyheight/{h}.json"))["blockhash"]
-        raw = get(f"block/{bh}.json")
-        tmp = path + ".tmp"
-        with gzip.open(tmp, "wb", compresslevel=6) as f:
-            f.write(raw)
-        os.replace(tmp, path)
+        local.fetch(h, local.node().getblockhash(h), path)
         if h % 500 == 0:
             print(h, flush=True)
 

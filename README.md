@@ -1,3 +1,150 @@
+# Cesspool Pruned
+
+A build of [cesspool.lol](https://cesspool.lol) to run on your own server, next to your own
+Bitcoin node. It grades every block the node gives it for spam, names the pool that mined it and
+the filter that would have kept the spam out, and serves the result as a static site.
+
+It is a fork of [jasonsopko/cesspool](https://github.com/jasonsopko/cesspool), kept close to it.
+What this fork changes:
+
+- **It works with a pruned node.** It reads the node over JSON-RPC, not REST, so it can sit behind
+  the btc-rpc-proxy that fronts a pruned node. It starts at the newest blocks and fills in history
+  backwards, as far as the node still has it. Below that, it can rebuild blocks through an
+  Electrum server that works beside a pruned node (Electrs Pruned, Fulcrum Pruned).
+- **It works on either chain**, the BLAKE2b chain cesspool.lol grades or the SHA256 chain. It asks
+  the node which one it is on (the hash of block 961640 tells them apart) and keeps each chain's
+  blocks and pages apart. On the SHA256 chain it also shows what Bitcoin Core's defaults would do
+  with each transaction, which the engine has always computed.
+- **It reads a Lightning node**, when you have one: the public channel graph, joined to the graded
+  blocks. See [Lightning](#lightning).
+- **It makes no outbound requests.** The pool list and the fonts ship with the image.
+- The pages lose the home page's opening section, the Get Plumb card and the Discord link, and say
+  "since block N" where an install does not reach back to the fork.
+
+Packaged for StartOS as `cesspool-pruned-startos` and for Umbrel in the `paulscode` community
+store. Upstream's own README follows [below](#cesspoollol).
+
+## Run it
+
+One image, two processes sharing `/data`:
+
+    docker buildx build -f docker/Dockerfile -t cesspool-pruned --load .
+
+    docker run -d --name cesspool-web -p 8080:8080 -v cesspool:/data cesspool-pruned
+    docker run -d --name cesspool-updater -v cesspool:/data \
+        -e CESSPOOL_RPC_URL=http://node:8332 -e CESSPOOL_RPC_USER=user -e CESSPOOL_RPC_PASS=pass \
+        cesspool-pruned /app/docker/updater.sh
+
+The web process serves a page that says what the updater is waiting for until the first blocks
+are graded, then the site. `http://<host>:8080/status.json` says where things stand.
+
+The build compiles the verdict engine from [Plumb](https://github.com/plumb-node/plumb) at the tag
+`cesspool/site.py` names (about three minutes on a fast machine) and refuses to build when the two
+disagree. It cross-compiles, so `--platform linux/amd64,linux/arm64` needs no ARM machine.
+
+## Settings
+
+Environment variables of the updater. Only the first is required.
+
+| Variable | Meaning | Default |
+|---|---|---|
+| `CESSPOOL_RPC_URL` | `http://host:port` of the node's RPC, or of the btc-rpc-proxy in front of a pruned node | |
+| `CESSPOOL_RPC_USER`, `CESSPOOL_RPC_PASS` | RPC credentials | empty: use the cookie |
+| `CESSPOOL_RPC_COOKIE` | the node's `.cookie` file, or its data directory | |
+| `CESSPOOL_ELECTRUM_HOST`, `CESSPOOL_ELECTRUM_PORT` | an Electrum server, plaintext TCP, for rebuilding blocks the node has pruned | none, 50001 |
+| `CESSPOOL_BACKFILL` | `1` to rebuild pruned blocks when an Electrum server is set | `1` |
+| `CESSPOOL_MAX_GB` | disk this chain's blocks and pages may take; `0` for no limit | `50` |
+| `CESSPOOL_MIN_FREE_MB` | stop storing blocks when the disk has less than this free | `2048` |
+| `CESSPOOL_SITE` | the site's own address, for share links and the feed | empty: relative links |
+| `CESSPOOL_OG` | `1` to draw share images | `0` |
+| `CESSPOOL_SETTINGS_PAGE` | `1` to put backfill and the disk limit in a form on `/about/`, for platforms with no settings form (Umbrel). The web process then needs `/data` writable, for `settings.json` alone, and the choice saved there wins over the two variables above | off |
+| `CESSPOOL_LN_BACKEND` | `lnd`, `cln`, `auto`, or empty | empty: no Lightning pages |
+| `CESSPOOL_LND_REST_URL`, `CESSPOOL_LND_TLS_CERT`, `CESSPOOL_LND_MACAROON` | LND, or Lightning Fork, which is LND | |
+| `CESSPOOL_CLN_SOCKET` | Core Lightning's `lightning-rpc` | |
+| `CESSPOOL_LN_REFRESH` | seconds between reads of the Lightning graph | `3600` |
+
+`cesspool/local.py` and `cesspool/lightning.py` document each one, and the `auto` mode.
+
+## What it stores, and how much
+
+Everything is under `/data`, one set of directories for each chain:
+
+    /data/<chain>/raw/      each block as the node gave it, with the coins it spends (gzipped JSON)
+    /data/<chain>/blocks/   one record a block; txd/ one record a transaction
+    /data/<chain>/ln/       the Lightning graph, when one is read
+    /data/www/<chain>/      the rendered site; /data/www/current links to the chain being graded
+    /data/status.json       where things stand
+
+Measured on real blocks in November 2026: a block with its records and pages takes about
+**0.6 MB on the BLAKE2b chain** and about **8 MB on the SHA256 chain**, where blocks are full: over
+a gigabyte a day. So there is a ceiling, `CESSPOOL_MAX_GB`. History fills in until it is reached,
+and from then on the oldest blocks are dropped as new ones arrive, the way a reorged block is
+dropped. At the default 50 GB the BLAKE2b chain keeps everything for well over a year, and the
+SHA256 chain keeps about six weeks.
+
+Stored blocks are kept whole on purpose: a pruned node cannot supply a block again, and a later
+release with newer filters grades from them.
+
+## Pruned nodes
+
+`getblock <hash> 3` is what cesspool grades from, and a pruned node cannot answer it below its
+prune height: both the block and its record of the coins the block spent are gone. So:
+
+- a first run starts 12 blocks below the tip, so the site is up in minutes, then fills in older
+  blocks newest first, down to the prune height;
+- below that, with an Electrum server set, `cesspool/backfill.py` rebuilds each block from its
+  bytes (the proxy fetches them from peers), the node's own decoding, and the transactions its
+  inputs spend from, which the Electrum server has. Every transaction is checked against its id.
+  This is slow, minutes a block on the SHA256 chain, because each of those transactions sits in
+  some older block that the Electrum server in turn fetches from peers;
+- what neither can supply is a gap, and `/about/` says which blocks and why.
+
+## Lightning
+
+With a Lightning node set, the site gains `/lightning/`: nodes, channels and capacity as that node
+sees the public graph, rankings, a page for each node and channel, and, from cesspool's own
+records, how each channel closed (cooperative, forced, forced with a penalty) and what each node
+policy does with Lightning's own transactions. Transaction and block pages say when they open or
+close a channel. Only public information is read: the gossip graph and the node's own identity.
+No balances, payments or private channels, and nothing is written to the node.
+
+A close is known only when its block was graded here. Maps and lists by country or network
+provider, which mempool.space has, are not built: they need a location database this build does
+not carry.
+
+## How the fork is laid out
+
+Fork behaviour lives in new files, and upstream's files reach it through one-line hooks, so that
+merging upstream stays cheap:
+
+    cesspool/local.py       settings, chain detection, what to fetch, coverage, words on the pages
+    cesspool/rpc.py         the JSON-RPC client
+    cesspool/backfill.py    rebuilding pruned blocks; cesspool/electrum.py is its Electrum client
+    cesspool/lightning.py   the Lightning graph and closes; cesspool/pages_ln.py draws its pages
+    static/local.css, static/lightning.js
+    tools/serve.py          the updater process: waits for the node, finds the chain, runs update.py
+    tools/since.py          rewrites "since the fork" into calls; run it again after merging upstream
+    docker/                 the image, nginx, the pool lists
+    tests/                  python3 -m unittest discover -s tests
+
+To merge upstream: `git merge upstream/master`, take upstream's side of any conflict in
+`cesspool/site.py` and `static/site.js` that is only wording, run `tools/since.py`, then the tests.
+When upstream moves `PLUMB_TAG`, set `PLUMB_TAG` and `PLUMB_COMMIT` in `docker/Dockerfile` to match.
+
+Outside the image, `eval "$(tools/deps.sh)"` fetches the one runtime file that is not in this
+repository (reorg-watch, at a pinned commit) and sets the environment for it.
+
+## Credits
+
+cesspool.lol and its grading are Jason Sopko's work, under the MIT licence in `LICENSE`; this fork
+only makes it run elsewhere, under the same licence. The image also contains [reorg-watch](https://github.com/jasonsopko/reorg-watch) (MIT), the verdict
+engine built from [Plumb](https://github.com/plumb-node/plumb) (MIT), IBM Plex (SIL Open Font
+License 1.1), and two pool lists: [mempool/mining-pools](https://github.com/mempool/mining-pools)
+(MIT) for the SHA256 chain and [Kilombino/mempool-bip110](https://github.com/Kilombino/mempool-bip110)
+for the BLAKE2b chain.
+
+---
+
 # cesspool.lol
 
 Every Bitcoin block since the fork at 961640, every transaction in it, graded

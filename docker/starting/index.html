@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cesspool Pruned · starting</title>
+<style>
+:root { --bg: #0a1316; --panel: #122126; --line: #233a41; --text: #e4edee; --muted: #8ea4a9; --water: #3aa8d8; color-scheme: dark; }
+@media (prefers-color-scheme: light) { :root { --bg: #f2f5f3; --panel: #ffffff; --line: #d5dedb; --text: #13211f; --muted: #52666a; --water: #1f86b8; color-scheme: light; } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 640px; margin: 0 auto; padding: 14vh 20px 40px; }
+.brand { display: flex; align-items: center; gap: 10px; font-family: ui-monospace, Menlo, Consolas, monospace; font-weight: 600; }
+.brand svg { width: 30px; height: 30px; }
+.brand span span { color: var(--muted); }
+h1 { font-size: 2rem; line-height: 1.2; margin: 34px 0 12px; letter-spacing: -.02em; }
+p { color: var(--muted); margin: 0 0 1em; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px 18px; margin-top: 22px; }
+.panel b { display: block; color: var(--text); font-weight: 600; }
+.panel span { color: var(--muted); font-size: .9rem; }
+</style></head><body>
+<main>
+<div class="brand"><svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="29" fill="none" stroke="currentColor" stroke-width="4"/><circle cx="32" cy="32" r="21" fill="none" stroke="currentColor" stroke-width="2"/><path d="M24 50 q8 6 16 0" fill="none" stroke="var(--water)" stroke-width="3" stroke-linecap="round"/></svg><span>cesspool<span> pruned</span></span></div>
+<h1>Getting the first samples</h1>
+<p>This install grades blocks from your own Bitcoin node. The site appears here by itself once the first few blocks are graded, usually within a few minutes of the node being ready.</p>
+<div class="panel" aria-live="polite"><b id="message">Starting</b><span id="detail"></span></div>
+<noscript><p style="margin-top:18px">Reload this page in a few minutes.</p></noscript>
+</main>
+<script src="/starting/starting.js"></script>
+</body></html>

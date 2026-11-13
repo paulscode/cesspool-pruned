@@ -17,6 +17,10 @@
 // the counts include knots#470's recount from the keys a signature verified
 // against (see Count below); "script_error" is there when the policy script
 // check fails, which no profile's reasons include.
+//
+// PLUMB_CHECK_CHAIN names the chain the transactions were mined on: "blake2b",
+// the default and the chain cesspool.lol grades, or "sha256" (see Sha256Chain
+// below for the two things that differ there).
 #include <chainparams.h>
 #include <coins.h>
 #include <common/args.h>
@@ -59,6 +63,23 @@ bool CheckInputScripts(const CTransaction& tx, TxValidationState& state,
                        std::vector<VerifiedKeys>* verified_keys) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
 namespace {
+
+// True when the transactions come from the SHA256 chain. This tree is built for the BLAKE2b
+// chain, and two of the things it takes from that chain are wrong for a transaction mined on
+// the other one:
+//   the unified sighash, an opt-in bit in the hash type byte that a node accepts only where the
+//   BLAKE2b fork is scheduled (UnifiedSighashMempoolFlag in validation.cpp). The SHA256 chain
+//   never scheduled it, so the byte keeps its old meaning there and the flag stays off;
+//   the 83-byte cap on -datacarriersize, there because the BLAKE2b chain's consensus refuses a
+//   larger OP_RETURN output. Bitcoin Core 30 and later relay one up to 100,000 bytes, and the
+//   SHA256 chain mines them, so the core profile's limit is Core's there.
+// The RDTS script flags stay on: they are part of this tree's standard flags whatever the
+// height, so they are what Knots 29.5 and Plumb apply to any transaction they are handed.
+bool Sha256Chain()
+{
+    const char* chain{std::getenv("PLUMB_CHECK_CHAIN")};
+    return chain && std::string{chain} == "sha256";
+}
 
 using Settings = std::vector<std::pair<std::string, std::string>>;
 
@@ -191,7 +212,7 @@ public:
             // returns with no ignore_rejects (it sits in validation.cpp's anonymous namespace), and
             // what UnifiedSighashMempoolFlag adds wherever the fork is scheduled, as it is on mainnet.
             unsigned int flags{STANDARD_SCRIPT_VERIFY_FLAGS};
-            if (DeploymentEnabled(Params().GetConsensus(), Consensus::DEPLOYMENT_BLAKE2B)) flags |= SCRIPT_VERIFY_UNIFIED_SIGHASH;
+            if (!Sha256Chain() && DeploymentEnabled(Params().GetConsensus(), Consensus::DEPLOYMENT_BLAKE2B)) flags |= SCRIPT_VERIFY_UNIFIED_SIGHASH;
             TxValidationState state;
             PrecomputedTransactionData txdata;
             LOCK(cs_main);
@@ -362,6 +383,10 @@ BOOST_AUTO_TEST_CASE(plumb_check)
     // Core has no knots#487 either: -permitlnrevokeleaf=0 keeps the 34 bytes of LND's revocation
     // leaf where Knots 29.5 books them. -corepolicy skips the data carrier check, so no verdict moves.
     profiles.push_back(MakeProfile("core", {{"-corepolicy", "1"}, {"-maxtxlegacysigops", "2500"}, {"-permitlnrevokeleaf", "0"}}, defaults, false));
+    // On the SHA256 chain that datacarriersize does matter: no consensus rule caps an OP_RETURN
+    // there, and Core 30 raised its relay limit to MAX_STANDARD_TX_WEIGHT / WITNESS_SCALE_FACTOR
+    // bytes. This tree's -datacarriersize stops at 83, so the limit is set on the options.
+    if (Sha256Chain()) profiles.back().opts.max_datacarrier_bytes = static_cast<unsigned>(MAX_STANDARD_TX_WEIGHT / WITNESS_SCALE_FACTOR);
     // Stock Knots 29.5: it carries the dead-branch, bare-envelope, unproven-key and BPUB rules
     // itself (knots#400, #319, #422, #463), so only Plumb's two own filters are off, and
     // -datacarriersize defaults to 83 where Plumb's is 42. It has none of knots#470, #487 and

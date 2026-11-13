@@ -1,0 +1,81 @@
+# Build and publish this fork's image to ghcr.io.
+#
+# One image, linux/amd64 and linux/arm64, from docker/Dockerfile. The verdict engine is compiled on
+# the runner for both targets (the Dockerfile's "checker" stage runs on the build platform and
+# cross-compiles), so QEMU is used only for the arm64 image's short apt and smoke-test steps.
+#
+# Runs on a tag of the form v<x.y.z>-pruned.<n>, or by hand with the tag to publish under. Nothing
+# else in the repository pushes an image. Downstream (the StartOS package and the Umbrel app) pins
+# the result by digest:
+#   docker buildx imagetools inspect ghcr.io/paulscode/cesspool-pruned:<tag> --format '{{.Manifest.Digest}}'
+name: Publish image
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to publish the image under, for example v0.1.0-pruned.1'
+        required: true
+        type: string
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE: cesspool-pruned
+
+jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+
+  build:
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Work out the tag
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "TAG=$INPUT_TAG" >> "$GITHUB_ENV"
+          else
+            echo "TAG=${GITHUB_REF#refs/tags/}" >> "$GITHUB_ENV"
+          fi
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: linux/arm64
+
+      - name: Set up Docker buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        run: |
+          case "$TAG" in
+            v[0-9]*-pruned.[0-9]*) ;;
+            *) echo "tag $TAG is not of the form v<x.y.z>-pruned.<n>"; exit 1 ;;
+          esac
+          docker buildx build -f docker/Dockerfile \
+            --platform linux/amd64,linux/arm64 \
+            --tag "$REGISTRY/${{ github.repository_owner }}/$IMAGE:$TAG" \
+            --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
+            --label "org.opencontainers.image.revision=${{ github.sha }}" \
+            --label "org.opencontainers.image.version=$TAG" \
+            --output "type=registry,push=true" \
+            .
+          docker buildx imagetools inspect "$REGISTRY/${{ github.repository_owner }}/$IMAGE:$TAG" --format '{{.Manifest.Digest}}'

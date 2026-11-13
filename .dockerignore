@@ -1,0 +1,7 @@
+.git
+.github
+internal_docs
+deploy
+**/__pycache__
+**/*.pyc
+.deps

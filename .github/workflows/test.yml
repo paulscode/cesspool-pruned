@@ -1,0 +1,32 @@
+# The tests, on every push and pull request, and before an image is published.
+#
+# They need nothing but Python and one file fetched at a pinned commit (reorg-watch, for the pool
+# names; tools/deps.sh checks its digest). The tests that grade with the real engine are skipped
+# here: the image build runs the engine on both chains before it will produce an image at all.
+name: Test
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'   # the image's Python; site.py needs 3.12 or later
+      - name: Fetch reorg-watch at the pinned commit
+        run: tools/deps.sh >> deps.env
+      - name: Run the tests
+        run: |
+          . ./deps.env
+          python3 -m unittest discover -s tests -v
+      - name: The rewording tool has nothing left to do
+        run: python3 tools/since.py --check

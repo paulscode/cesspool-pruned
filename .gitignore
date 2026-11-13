@@ -1,2 +1,4 @@
 __pycache__/
 *.pyc
+internal_docs/
+.deps/

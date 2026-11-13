@@ -1,29 +1,23 @@
 #!/usr/bin/env python3
-"""Minute cron: fetch new blocks, undo reorged ones, render what changed.
+"""Fetch new blocks, undo reorged ones, render what changed. docker/updater.sh runs it in a loop.
 
-update.py --out /var/www/cesspool.lol [--all | --pages] [--watch 57]
+update.py --out /data/www/<chain> [--all | --pages] [--watch 57]
 
 With --watch, it keeps checking the node's tip every WATCH_EVERY seconds for that long and
 updates as soon as the best block changes, so a block shows in seconds instead of waiting
 for the next minute.
 """
-import argparse, fcntl, json, os, sys, time, urllib.request
+import argparse, fcntl, json, os, sys, time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from cesspool import miner, process, site  # noqa: E402
+from cesspool import local, miner, process, site  # noqa: E402
 
-REST = "http://127.0.0.1:8332/rest"
 REORG_DEPTH = 30
 WATCH_EVERY = 2
 
 
-def get(path, timeout=60):
-    with urllib.request.urlopen(f"{REST}/{path}", timeout=timeout) as r:
-        return r.read()
-
-
 def hash_at(h):
-    return json.loads(get(f"blockhashbyheight/{h}.json"))["blockhash"]
+    return local.node().getblockhash(h)
 
 
 def main():
@@ -37,6 +31,7 @@ def main():
     a = ap.parse_args()
 
     os.makedirs(process.HOME, exist_ok=True)
+    local.prepare(a.out)
     if not a.watch:
         if not run(a) and (a.all or a.pages):
             # The minute cron skips quietly when another run holds the lock; a run asked for by hand says so.
@@ -46,8 +41,8 @@ def main():
     seen = None
     while True:
         # A failure ends the loop: the next minute's run tries again, as without --watch.
-        best = json.loads(get("chaininfo.json", timeout=8))["bestblockhash"]
-        if best != seen and run(a):
+        best = local.best()
+        if (best != seen or local.pending()) and run(a):
             seen = best
         if time.monotonic() + WATCH_EVERY >= deadline:
             return
@@ -66,9 +61,9 @@ def run(a):
 
 
 def update(a):
-    tip = json.loads(get("chaininfo.json"))["blocks"]
+    tip = local.tip()
     have = sorted(int(n[:-5]) for n in os.listdir(process.BLOCKS) if n.endswith(".json"))
-    top = have[-1] if have else site.FORK - 1
+    top = have[-1] if have else local.start(tip) - 1
 
     # A reorg replaces blocks we already processed: drop them from the fork point up.
     redo_from = None
@@ -90,20 +85,19 @@ def update(a):
                     os.remove(p)
         top = redo_from - 1
 
-    new = list(range(top + 1, tip + 1))
+    local.expire(a.out, top)
+    new = local.heights(top, tip)
     for h in new:
         path = f"{process.RAW}/{h}.json.gz"
         if not os.path.exists(path):
-            import gzip
-            raw = get(f"block/{hash_at(h)}.json")
-            with gzip.open(path + ".tmp", "wb", compresslevel=6) as f:
-                f.write(raw)
-            os.replace(path + ".tmp", path)
-    for i in range(0, len(new), 100):
-        process.process_range(new[i:i + 100])
+            local.fetch(h, hash_at(h), path)
+    new = local.stored(new)
+    for batch in local.batches(new):
+        process.process_range(batch)
     flipped = apply_port_identities()
-    if new or flipped or a.all or a.pages or redo_from is not None:
-        site.build(a.out, heights=new + flipped, all_blocks=a.all, og=not a.no_og, pages=a.pages)
+    if flipped or a.all or a.pages or redo_from is not None or local.build_due(a.out, new, top):
+        site.build(a.out, heights=new + flipped, all_blocks=a.all, og=local.OG and not a.no_og, pages=a.pages)
+    local.done(new, top)
 
 
 def apply_port_identities():

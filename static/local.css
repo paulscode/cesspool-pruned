@@ -1,0 +1,38 @@
+/* Cesspool Pruned: the rules this build adds to cesspool.lol's site.css. Kept in a file of their own
+   so that site.css merges cleanly from upstream. */
+
+/* Which chain this install grades, beside the name in the header. */
+.chainchip { font-family: "Plex Mono", monospace; font-size: .68rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; margin-left: 2px; }
+@media (max-width: 760px) { .brand .tld { display: inline; } .chainchip { display: none; } }
+
+/* The home page opens on the strip of newest blocks, with no hero above it. */
+.strip.home { padding-top: 26px; }
+
+/* Three verdicts side by side where Bitcoin Core is compared too (the SHA256 chain). */
+@media (min-width: 761px) { .verd:has(> div:nth-child(3)) { grid-template-columns: repeat(3, 1fr); } }
+
+/* Lightning pages (cesspool/pages_ln.py, static/lightning.js). */
+.lnsw { display: inline-block; width: .7em; height: .7em; border-radius: 50%; margin-right: .45em; vertical-align: .02em; border: 1px solid var(--line); }
+.lnsw.none { background: var(--panel2); }
+h1 .lnsw { width: .5em; height: .5em; vertical-align: .12em; }
+.wk-bar.ln { background: var(--water); }
+.lnsearch { margin-top: 4px; }
+.lnfound p { overflow-wrap: anywhere; }
+.lnout h3 { margin-top: 22px; }
+.lnchart { display: block; width: 100%; height: 160px; }
+.lnchart .a { fill: color-mix(in srgb, var(--water) 22%, transparent); stroke: none; }
+.lnchart .l { fill: none; stroke: var(--water); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.note.ln { border-color: var(--water); margin: 0 0 12px; }
+.note.ln p { margin: 0 0 .3em; }
+.note.ln p:last-child { margin: 0; }
+.lnblock { margin-top: 10px; max-width: 70ch; }
+#lnnode .hero h1, #lnchan .hero h1 { max-width: none; overflow-wrap: anywhere; }
+
+/* The settings form on /about/ (cesspool/local.py settings_html, static/settings.js). */
+.settingsform { margin: 10px 0 18px; }
+.settingsform fieldset { border: 0; padding: 0; margin: 0 0 14px; }
+.settingsform legend { font-weight: 600; margin-bottom: 6px; }
+.settingsform label { margin-right: 18px; }
+.settingsform select { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 5px 8px; font: inherit; }
+.settingsform .btn { border: 0; cursor: pointer; font: inherit; }
+.settingsout.bad { color: var(--miss); }
