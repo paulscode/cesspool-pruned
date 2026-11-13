@@ -1797,7 +1797,7 @@ def past_page(idx, tip):
 <p class="lede">Knots refuses every transaction counted here at its default settings, and Plumb refuses them too. A node at those defaults does not accept them from peers or put them in a block unless its operator overrides the refusal. Each block below holds at least one: it was built on a node without those rules, on one with them turned off or overridden, or by pool software that added transactions the node's mempool did not hold. Refusing is policy, not a consensus rule, so these blocks are valid.</p>
 <p class="small muted" style="margin-top:8px">Not counted: dust sweeps and Rootstock PowPeg spends. Knots refuses those at its defaults too, but they <a href="/about/#bar">are not spam</a>: the bytes it counts are padding or a 32-byte commitment.</p>
 <p class="small muted" style="margin-top:8px">Pool names come from each block's coinbase text and payout addresses, by the same rules as <a href="https://reorg.watch">reorg.watch</a>. "Named by" says whether the block pays an address on file for the name it carries. Where it does not, only its coinbase text, which anyone can write, ties it to that name.</p></div>
-<div class="tiles"><div class="tile"><div class="v">{n(len(pb))} <span class="muted" style="font-size:1rem">/ {n(len(blocks))}</span></div><div class="l">blocks past the defaults</div><div class="s">since the fork</div></div>
+<div class="tiles"><div class="tile"><div class="v">{n(len(pb))} <span class="muted" style="font-size:1rem">/ {n(len(blocks))}</span></div><div class="l">blocks past the defaults</div><div class="s">{local.since()}</div></div>
 <div class="tile"><div class="v">{n(txs)}</div><div class="l">transactions the defaults refuse, mined</div></div>
 <div class="tile"><div class="v">{n(len(pools))}</div><div class="l">pools and miners</div></div></div>
 <h3>By pool</h3>
@@ -1809,7 +1809,7 @@ def past_page(idx, tip):
 <p class="small muted" style="margin-top:22px">{DATUM_NOTE}</p>
 {plumb_cta("A Plumb node refuses every transaction on this page.")}'''
     return page("/past-defaults/", "Past the defaults", body, nav="past",
-                desc=f"{n(len(pb))} blocks since the fork hold transactions that Knots and Plumb refuse at their defaults.", tip=tip)
+                desc=f"{n(len(pb))} blocks {local.since()} hold transactions that Knots and Plumb refuse at their defaults.", tip=tip)
 
 
 WEEK = 7 * 86400
@@ -1849,7 +1849,7 @@ def weekly_chart(mine, everything, name):
         nw, nsw = net[i]
         ns = nsw / nw if nw else 0
         day = datetime.datetime.fromtimestamp(end, datetime.timezone.utc)
-        span = f"From the fork to {utc(end)}" if i == weeks - 1 else f"7 days to {utc(end)}"
+        span = f"{local.from_first()} to {utc(end)}" if i == weeks - 1 else f"7 days to {utc(end)}"
         line = f'<div class="wk-net" style="bottom:{100 * ns / top:.1f}%"></div>' if nw else ""
         if not blocks:
             cols.append(f'<div class="wk none" title="{span}: no blocks from {esc(name)}. Every block: {pct(ns, 2)} sewage.">'
@@ -1917,7 +1917,7 @@ def payout_table(blocks, pool, fstate):
     listed = ("The address is below, with a look up link to Address Lookup." if na == 1 else
               "Every one is below, each with a look up link to Address Lookup." if na <= PAYOUT_ROWS else
               f"The {PAYOUT_ROWS} paid the most are below, each with a look up link to Address Lookup.")
-    return (f'<h3 style="margin-top:22px">Payout addresses</h3><p class="small muted" style="margin-bottom:8px">{whose} since the fork '
+    return (f'<h3 style="margin-top:22px">Payout addresses</h3><p class="small muted" style="margin-bottom:8px">{whose} {local.since()} '
             f'paid {btc(total, 8)} BTC to {to}. {listed} A pool that pays its miners in the coinbase shows their addresses here. '
             f'A pool that holds rewards and pays its miners later does not: their addresses never appear in a coinbase.</p>'
             f'<div class="tw"><table><tr><th>Address</th><th class="r">Blocks</th><th class="r">BTC</th><th class="r">Share</th>'
@@ -1935,7 +1935,7 @@ def pool_page(idx, name, tip, fstate):
         if not via:
             return None
         body = f'''<div class="hero"><div class="kicker">Inspection report</div><h1>{esc(name)}</h1>
-<p class="lede">{plural(len(via), "block")} mined through {esc(name)} since the fork, and a DATUM gateway with {esc(name)} upstream built {"its" if len(via) == 1 else "every"} template.
+<p class="lede">{plural(len(via), "block")} mined through {esc(name)} {local.since()}, and a DATUM gateway with {esc(name)} upstream built {"its" if len(via) == 1 else "every"} template.
 The gateway&#39;s node chooses the transactions, normally the miner&#39;s own, so {"that block is" if len(via) == 1 else "those blocks are"} counted under {via_link}.</p></div>'''
         return page(f"/pool/{miner.slug(name)}/", name, body, nav="shame", desc=f"Every block mined through {name} was built by a DATUM miner.", tip=tip), None, None, None
     p30 = pool_stats(window_blocks(idx, 30 * 86400)).get(name)
@@ -1953,12 +1953,12 @@ The gateway&#39;s node chooses the transactions, normally the miner&#39;s own, s
             words, cls = trend(p30["share"], b30["share"])
             vs = f', <span class="{cls}">{words}</span> the 30 days before'
     pb = sorted([b for b in allb if past(b)], key=lambda b: -b["h"])
-    tiles = f'''<div class="tiles"><div class="tile"><div class="v g-raw">{pct(cur["share"], 2)}</div><div class="l">of its block space is sewage</div><div class="s">{"last 30 days" if p30 else "since the fork"}{vs}</div></div>
+    tiles = f'''<div class="tiles"><div class="tile"><div class="v g-raw">{pct(cur["share"], 2)}</div><div class="l">of its block space is sewage</div><div class="s">{"last 30 days" if p30 else local.since()}{vs}</div></div>
 <div class="tile"><div class="v">{n(cur["sn"])}</div><div class="l">sewage transactions mined</div><div class="s">in {n(cur["dirty"])} of {n(cur["blocks"])} blocks</div></div>
 <div class="tile"><div class="v">{btc(cur["sf"])}</div><div class="l">BTC in fees {"paid" if dtm else "taken"} for them</div><div class="s">{pct(cur["fee_share"])} of {"the fees in these blocks" if dtm else "its fee income"}</div></div>
 <div class="tile"><div class="v">{n(cur["pristine"])}</div><div class="l">pristine blocks</div><div class="s">{n(cur["nodata"])} with not one byte of data</div></div>
-<div class="tile"><div class="v">{n(len(pb))} <span class="muted" style="font-size:1rem">/ {n(len(allb))}</span></div><div class="l">blocks past the defaults</div><div class="s">since the fork, <a href="/past-defaults/">what this means</a></div></div></div>'''
-    window = "in the last 30 days" if p30 else "since the fork"
+<div class="tile"><div class="v">{n(len(pb))} <span class="muted" style="font-size:1rem">/ {n(len(allb))}</span></div><div class="l">blocks past the defaults</div><div class="s">{local.since()}, <a href="/past-defaults/">what this means</a></div></div></div>'''
+    window = "in the last 30 days" if p30 else local.since()
     if cur["blocks"] == 1:
         counted = f"the one block it mined {window}{', a pristine one' if cur['pristine'] else ''}"
     elif cur["pristine"] == cur["blocks"]:
@@ -1991,12 +1991,12 @@ The gateway&#39;s node chooses the transactions, normally the miner&#39;s own, s
             basis = (f" {n(tonly)} of them {'is' if tonly == 1 else 'are'} named {esc(base)} by coinbase text alone, which anyone can write; "
                      f"the rest pay an address on file for it.")
         holds = ("holds a transaction" if past(pb[0]) == 1 else "holds transactions") if len(pb) == 1 else "hold transactions"
-        past_part = (f'<h3 style="margin-top:22px">Past the defaults</h3><p class="small muted" style="margin-bottom:8px">{of_its} since the fork '
+        past_part = (f'<h3 style="margin-top:22px">Past the defaults</h3><p class="small muted" style="margin-bottom:8px">{of_its} {local.since()} '
                      f'{holds} that Knots and Plumb refuse at their default settings.{basis} '
                      f'<a href="/past-defaults/">Every pool and block</a>. {SETTINGS_LINK}.</p>'
                      f'<div class="tw"><table><tr><th>Block</th><th>Time</th><th class="r">Refused txs</th><th>Named by</th><th>Kinds</th></tr>{prows}</table></div>')
     else:
-        none = f"None of its {n(nb)} blocks since the fork holds" if nb != 1 else "Its one block since the fork does not hold"
+        none = f"None of its {n(nb)} blocks {local.since()} holds" if nb != 1 else f"Its one block {local.since()} does not hold"
         past_part = (f'<p class="small muted" style="margin-top:22px">{none} a transaction that Knots and Plumb '
                      f'refuse at their default settings. <a href="/past-defaults/">What this means</a>.</p>')
     plumb_part = pct(cur["psw"] / cur["sw"]) if cur["sw"] else "0%"
@@ -2024,22 +2024,22 @@ The gateway&#39;s node chooses the transactions, normally the miner&#39;s own, s
         intro = ""
     if cur["sn"] and dtm:
         operator = f'''<div class="panel" style="margin-top:22px"><h3>To the DATUM miners on {esc(base)}</h3>
-<p>Your nodes built these templates. They carried {n(cur["sn"])} sewage transactions {"in the last 30 days" if p30 else "since the fork"}, which paid {btc(cur["sf"])} BTC in fees, {pct(cur["fee_share"])} of the fees in these blocks, to store {size(cur["sd"])} of other people's files and token bookkeeping on every node that will ever run.</p>
+<p>Your nodes built these templates. They carried {n(cur["sn"])} sewage transactions {"in the last 30 days" if p30 else local.since()}, which paid {btc(cur["sf"])} BTC in fees, {pct(cur["fee_share"])} of the fees in these blocks, to store {size(cur["sd"])} of other people's files and token bookkeeping on every node that will ever run.</p>
 <p>A Plumb node behind your gateway would have refused {plumb_part} of that block space.{" The rest gets past Plumb's filters." if cur["psw"] < cur["sw"] else ""}</p></div>'''
     elif cur["sn"]:
         operator = f'''<div class="panel" style="margin-top:22px"><h3>To the operator of {esc(name)}</h3>
-<p>Your blocks carried {n(cur["sn"])} sewage transactions {"in the last 30 days" if p30 else "since the fork"}. They paid you {btc(cur["sf"])} BTC, {pct(cur["fee_share"])} of your fee income, to store {size(cur["sd"])} of other people's files and token bookkeeping on every node that will ever run.</p>
+<p>Your blocks carried {n(cur["sn"])} sewage transactions {"in the last 30 days" if p30 else local.since()}. They paid you {btc(cur["sf"])} BTC, {pct(cur["fee_share"])} of your fee income, to store {size(cur["sd"])} of other people's files and token bookkeeping on every node that will ever run.</p>
 <p>A Plumb node building your templates would have refused {plumb_part} of that block space.{" The rest gets past Plumb's filters." if cur["psw"] < cur["sw"] else ""}</p></div>'''
     else:
-        operator = f'''<div class="panel" style="margin-top:22px"><h3>Clean record</h3><p>{f"No block a DATUM miner built through {esc(base)} carried" if dtm else f"{esc(name)} has not mined"} a single sewage transaction {"in the last 30 days" if p30 else "since the fork"}. That is what this page is for.</p></div>'''
+        operator = f'''<div class="panel" style="margin-top:22px"><h3>Clean record</h3><p>{f"No block a DATUM miner built through {esc(base)} carried" if dtm else f"{esc(name)} has not mined"} a single sewage transaction {"in the last 30 days" if p30 else local.since()}. That is what this page is for.</p></div>'''
     body = f'''<div class="bhead"><div class="t"><div class="kicker">Inspection report</div><h1>{esc(name)}</h1>
-<div class="meta"><span><b class="num">{n(pall["blocks"])}</b> blocks since the fork</span><span>last block <a href="/block/{recent[0]["h"]}/">{recent[0]["h"]}</a> {tm(recent[0]["t"])}</span></div>
+<div class="meta"><span><b class="num">{n(pall["blocks"])}</b> blocks {local.since()}</span><span>last block <a href="/block/{recent[0]["h"]}/">{recent[0]["h"]}</a> {tm(recent[0]["t"])}</span></div>
 {intro}<p style="margin-top:12px"><button class="copy" data-copy="{esc(name)}: grade {L} at {local.BRAND}. {pct(cur["share"], 2)} of its block space is spam. {SHARE}/pool/{miner.slug(name)}/">Copy share link</button></p></div>
 <div class="stampbox" style="text-align:center"><span class="letter gr-{L}">{L}</span><div class="small muted" style="margin-top:10px">{LETTER_TEXT[L]}</div></div></div>
 {tiles}
 {share_note}
 {gateways}
-<h2>Since the fork</h2>{weekly_chart(allb, everything, name)}
+<h2>{local.since_title()}</h2>{weekly_chart(allb, everything, name)}
 <div class="strip">{"".join(cube_link(b) for b in recent)}</div>
 <div class="grid2"><div><h3>Worst blocks</h3><div class="tw"><table><tr><th>Block</th><th>Time</th><th>Grade</th><th class="r">Share</th><th class="r">Txs</th><th class="r">Payload</th></tr>{wrows or '<tr><td colspan="6" class="muted">None.</td></tr>'}</table></div></div>
 <div><h3>What it mined</h3><div class="tw"><table><tr><th>Kind</th><th class="r">Txs</th><th>Filter</th></tr>{trows or '<tr><td colspan="3" class="muted">Nothing.</td></tr>'}</table></div></div></div>
@@ -2083,14 +2083,14 @@ def guide_page(idx, tip):
 <p class="small muted">Seen {plural(s["n"], "time")} in {plural(s["blocks"], "block")}, {"its payload counted where the outputs are spent" if i.get("staged") else size(s["data"]) + " of payload"}. First at <a href="/block/{s["first"]}/">{s["first"]}</a>, latest at <a href="/block/{s["last"]}/">{s["last"]}</a>.</p></div>
 <div><div class="small muted" style="margin-bottom:4px">Refused, measured on every instance</div><div class="tw"><table class="meas">{"".join(measured)}</table></div></div></div></section>''')
     body = f'''<div class="hero"><div class="kicker">Field guide</div><h1>Every shape we have caught</h1>
-<p class="lede">Each kind of spam on the chain since the fork: what it is, how it hides the bytes, and which filter stops it. The refusal rates come from running each policy's code on every instance, so where the label and the measurement disagree, the measurement wins.</p>
+<p class="lede">Each kind of spam on the chain {local.since()}: what it is, how it hides the bytes, and which filter stops it. The refusal rates come from running each policy's code on every instance, so where the label and the measurement disagree, the measurement wins.</p>
 <p class="small"><span class="chip n">No filter yet</span> spam no shipped release refuses &nbsp; <span class="chip p">Plumb</span> refused by a Plumb filter or its {DATACARRIER_SIZE["plumb"]}-byte data limit &nbsp;
 <span class="chip k">Knots default</span> refused by stock Knots too &nbsp; <span class="chip a">Allowed</span> gray water inside Plumb&#39;s {DATACARRIER_SIZE["plumb"]}-byte default &nbsp;
 <span class="chip ok">Not spam</span> refused by a filter, but every byte it counts is padding, a commitment or a payment</p>
 <p class="small muted">A filter counts bytes; it cannot say why they are there. Each entry below is held to <a href="/about/#bar">one bar</a>, and where a protocol has defenders, the entry gives their case.</p></div>
 {"".join(secs)}
 <div class="panel"><h3>Found a new shape?</h3><p class="muted" style="margin:0">Plumb takes filter PRs directly. The bar: its own option, tests, numbers from the chain, and a false-positive check against real payments. <a href="{PLUMB_REPO}/blob/29.x-plumb/.github/CONTRIBUTING.md">How to submit a filter</a>.</p></div>'''
-    return page("/guide/", "Field Guide", body, nav="guide", desc="Every kind of Bitcoin spam since the fork, and which filter stops it.", og="/og/site.png", tip=tip)
+    return page("/guide/", "Field Guide", body, nav="guide", desc=f"Every kind of Bitcoin spam {local.since()}, and which filter stops it.", og="/og/site.png", tip=tip)
 
 
 def plumb_release(tag):
@@ -2126,7 +2126,7 @@ def plumb_page(idx, tip):
                     f'<td>{esc(plumb_release(x.get("since")))}</td></tr>' for x in filters)
     body = f'''<div class="hero"><div class="kicker">The fix</div><h1>Plumb keeps it out of the block</h1>
 <p class="lede">Plumb is Bitcoin Knots plus every spam filter that has been reviewed and tested, on by default, in every release. It changes what a node relays and puts in its block templates. It does not change consensus.</p></div>
-<div class="tiles"><div class="tile"><div class="v">{size(tot["sd"])}</div><div class="l">of sewage payload mined since the fork</div></div>
+<div class="tiles"><div class="tile"><div class="v">{size(tot["sd"])}</div><div class="l">of sewage payload mined {local.since()}</div></div>
 <div class="tile"><div class="v">{pct(tot["psw"] / tot["sw"] if tot["sw"] else 0)}</div><div class="l">of that block space a Plumb node refuses</div></div>
 <div class="tile"><div class="v">{pct(tot["ksw"] / tot["sw"] if tot["sw"] else 0)}</div><div class="l">refused by stock Knots</div></div>
 <div class="tile"><div class="v">{n(tot["sm"])}</div><div class="l">sewage transaction{"" if tot["sm"] == 1 else "s"} {PLUMB_NAME} misses</div><div class="s">{"a fake multisig reveal" if tot["sm"] == 1 else "fake multisig reveals"} small enough to stay under the limit</div></div></div>
@@ -2143,7 +2143,7 @@ def plumb_page(idx, tip):
 def found_page(tip):
     body = f'''<div id="foundapp" data-fork="{local.first()}">
 <div class="hero"><div class="kicker">Your blocks</div><h1>Find the blocks you mined</h1>
-<p class="lede">Type a payout address, a pool name or the text in your coinbase. The page lists every block since the fork that matches, graded, and grades the lot the way the Hall of Shame grades a pool.</p></div>
+<p class="lede">Type a payout address, a pool name or the text in your coinbase. The page lists every block {local.since()} that matches, graded, and grades the lot the way the Hall of Shame grades a pool.</p></div>
 <form class="txform foundform"><input spellcheck="false" autocomplete="off" placeholder="Payout address, pool name or coinbase tag" aria-label="Payout address, pool name or coinbase tag"><button class="btn">Find</button></form>
 <div class="foundout" aria-live="polite"></div>
 <div class="prose foundhelp"><h2>What finds what</h2>
@@ -2161,12 +2161,12 @@ def address_page(tip, counts):
     tok, own = counts
     held = "Nobody controls what other people send to their address, but a token stays where it was sent until the owner moves it."
     if tok:
-        held += (f" Of the {n(tok)} addresses since the fork that runestones or Counterparty enhanced sends pointed to, {n(own)} ({pct(own / tok)}) "
+        held += (f" Of the {n(tok)} addresses {local.since()} that runestones or Counterparty enhanced sends pointed to, {n(own)} ({pct(own / tok)}) "
                  "were pointed to at least once by a transaction that also spent from that address.")
     names = json.dumps({t: i["name"] for t, i in TYPES.items()}, separators=(",", ":"))
     body = f'''<div id="addrapp" data-fork="{local.first()}" data-types="{esc(names)}">
 <div class="hero"><div class="kicker">Address lookup</div><h1>Has this address handled sewage?</h1>
-<p class="lede">Type a Bitcoin address. The page lists every sewage transaction since the fork that spent from it, paid it, or pointed runes or a Counterparty enhanced send at it.</p></div>
+<p class="lede">Type a Bitcoin address. The page lists every sewage transaction {local.since()} that spent from it, paid it, or pointed runes or a Counterparty enhanced send at it.</p></div>
 <form class="txform foundform"><input spellcheck="false" autocomplete="off" placeholder="Bitcoin address" aria-label="Bitcoin address"><button class="btn">Look up</button></form>
 <div class="addrout" aria-live="polite"></div>
 <div class="prose foundhelp"><h2>What each line means</h2>
@@ -2178,7 +2178,7 @@ def address_page(tip, counts):
 <p class="small muted">The list covers what this site grades as sewage, from block {local.first()} on. No match means none of those transactions touched the address, not that the address is clean. Outputs that are themselves the data, such as fake addresses made of data, are left out, and so are pay-to-anchor outputs, which anyone can spend. Tokens are read from runestones and from Counterparty's enhanced sends. A receiver named in any other Counterparty message is not listed as a Counterparty receiver, and payments in other token protocols show as Got bitcoin.</p>
 <p class="small muted">What you type stays after the # in this page's address, which your browser never sends to the server. The page downloads two files, one of 256 sewage files and one of 256 coinbase payout files, both picked by the same hash of the address, so the server log holds those file names next to your IP address, not the address. Opening a transaction or a block from the result loads that page, and the server logs it like any other. <a href="/privacy/">What the server logs</a>.</p></div>
 <noscript><p class="muted">This page needs JavaScript to search.</p></noscript></div>'''
-    return page("/address/", "Address lookup", body, nav="address", desc="Look up a Bitcoin address: every sewage transaction since the fork that spent from it, paid it, or pointed runes or a Counterparty enhanced send at it.", tip=tip)
+    return page("/address/", "Address lookup", body, nav="address", desc=f"Look up a Bitcoin address: every sewage transaction {local.since()} that spent from it, paid it, or pointed runes or a Counterparty enhanced send at it.", tip=tip)
 
 
 # How about_page says each protocol in KNOWN is matched; the code is classify.known.
@@ -2213,7 +2213,7 @@ def about_page(idx, tip):
     krows = "".join(f'<tr><td class="wrapc">{esc(KNOWN[k][0])}<div class="small muted">{rule}</div></td><td class="r num">{n(ks.get(k, {}).get("n", 0))}</td>'
                     f'<td class="r num">{n(ks.get(k, {}).get("gray", 0))}</td><td class="r num">{n(ks.get(k, {}).get("sewage", 0))}</td></tr>' for k, rule in KNOWN_RULES)
     body = f'''<div class="hero prose"><div class="kicker">About</div><h1>How the water gets tested</h1>
-<p class="lede">Every block since the fork at height {FORK}, every transaction in it, run through the Knots and Plumb policy checks.</p></div>
+<p class="lede">Every block {local.from_the_fork()}, every transaction in it, run through the Knots and Plumb policy checks.</p></div>
 <div class="prose">
 <h2>Verdicts come from the shipped code</h2>
 <p>Each transaction, with the coins it spends, goes through the policy checks of {PLUMB_VERSION}: <code>IsStandardTx</code>, <code>AreInputsStandard</code>, the data-carrier count, <code>IsWitnessStandard</code> and the sigop limits, once with each software's default policy: stock {KNOTS_NAME} (Plumb's two own filters off, <code>permitlnrevokeleaf=0</code>, and <code>datacarriersize</code> at Knots' {DATACARRIER_SIZE["knots"]}) and Plumb (<code>datacarriersize</code> at {DATACARRIER_SIZE["plumb"]}, its default since plumb7). For Plumb the engine also runs the policy script check, as the node does, and counts the multisig keys again, crediting only those a signature verified against (knots#470); {KNOTS_NAME} has no such recount. {local.core_sentence(FORK, DATACARRIER_SIZE["knots"])} Nothing here reimplements a filter, so this page and a Plumb node cannot disagree about a transaction.</p>
@@ -2229,15 +2229,15 @@ def about_page(idx, tip):
 <h2 id="pools">Pool grades</h2>
 <p>A pool&#39;s grade comes from the share of its block space that is sewage: the weight of the sewage in its blocks divided by the weight of every block it mined, pristine blocks included. A pristine block adds its weight and no sewage. Take a pool with three blocks, two pristine blocks of 200 kWU each and one block of 600 kWU carrying 300 kWU of sewage. Its share is 300 / (200 + 200 + 600) = 30%.</p>
 <p>Blocks count by their weight, not one vote each, so the share says how much of what the pool put on the chain is sewage. One vote each would give the same pool (0% + 0% + 50%) / 3 = 16.7%, and would let a pool lower its number by mining empty blocks, which put nothing on the chain. Counted by weight, an empty block barely moves the share, since it weighs almost nothing.</p>
-<p>A is under 0.05%, B under 0.25%, C under 1%, D under 4%, F 4% or more. The Hall of Shame grades each window on its own. A pool&#39;s page grades its last 30 days, or the time since the fork when it has no block in the last 30 days. Your Blocks grades the blocks it finds the same way.</p>
-<p>Except since the fork, the Hall of Shame puts under each pool&#39;s share its share in the window of the same length before, when it mined enough blocks there to be ranked. A change within a tenth of the larger of the two reads as about the same. When the last 30 days and the 30 before each hold 20 or more of a pool&#39;s blocks, its page says which way it went. Its chart shows the pool&#39;s share week by week beside the share of every block mined that week.</p>
+<p>A is under 0.05%, B under 0.25%, C under 1%, D under 4%, F 4% or more. The Hall of Shame grades each window on its own. A pool&#39;s page grades its last 30 days, or the time {local.since()} when it has no block in the last 30 days. Your Blocks grades the blocks it finds the same way.</p>
+<p>Except {local.since()}, the Hall of Shame puts under each pool&#39;s share its share in the window of the same length before, when it mined enough blocks there to be ranked. A change within a tenth of the larger of the two reads as about the same. When the last 30 days and the 30 before each hold 20 or more of a pool&#39;s blocks, its page says which way it went. Its chart shows the pool&#39;s share week by week beside the share of every block mined that week.</p>
 <h2 id="bar">Not everything refused is spam</h2>
 <p>A filter counts bytes. It cannot say why they are there, so cesspool holds every refusal to one bar. A byte passes when it is one of two things:</p>
 <ul><li><b>Script the spend needs.</b> Keys, signatures, hashes and timelocks that the locking script checks when the coins move, including the keys of a multisig branch the spend did not sign with, because the script still evaluates them.</li>
 <li><b>Padding the relay rules force.</b> A transaction under 65 non-witness bytes is refused, so a sweep of one input has to carry a few bytes somewhere.</li></ul>
 <p>Anything else is data. Small data inside Plumb's default {DATACARRIER_SIZE["plumb"]}-byte allowance, in a transaction that moves coins, stays gray water: it is not counted against anyone, but it does not pass either. Knots allows {DATACARRIER_SIZE["knots"]}, so a note that counts {DATACARRIER_SIZE["plumb"] + 1} to {DATACARRIER_SIZE["knots"]} bytes is sewage here even though stock Knots relays it. Data written for an indexer, a token ledger or another chain fails, however much bitcoin moves beside it. Bytes a script pushes and then drops without using fail too, whatever their size. The bar says what passes; it does not promise that every byte failing it is caught. For one, neither Knots nor Plumb counts witness items a script drops unread, so a transaction carrying them grades clean.</p>
 <p>Two kinds of transaction that Knots or Plumb refuses pass the bar. cesspool lists them as gray water under their own names, and their pages still show every refusal:</p>
-<ul><li><a href="/guide/#ln-anchor-sweep">Sweeps</a> ({n(tn("ln-anchor-sweep", "p2a-sweep", "dust-sweep"))} since the fork): Lightning anchors, pay-to-anchor outputs and other dust spent into fees, with nothing but an OP_RETURN of {classify.SWEEP_PAD} bytes or less. Knots refuses a transaction whose only output is an OP_RETURN.</li>
+<ul><li><a href="/guide/#ln-anchor-sweep">Sweeps</a> ({n(tn("ln-anchor-sweep", "p2a-sweep", "dust-sweep"))} {local.since()}): Lightning anchors, pay-to-anchor outputs and other dust spent into fees, with nothing but an OP_RETURN of {classify.SWEEP_PAD} bytes or less. Knots refuses a transaction whose only output is an OP_RETURN.</li>
 <li><a href="/guide/#powpeg-flyover">Rootstock PowPeg Flyover spends</a> ({n(tn("powpeg-flyover"))}): the federation moving a deposit whose script starts with a 32-byte value that it drops unused. Knots counts that push as data.</li></ul>
 <p>Each one is kept narrow. A sweep's OP_RETURN holds at most {classify.SWEEP_PAD} bytes, and a sweep whose inputs carry anything Plumb or cesspool counts stays sewage. A Flyover spend is recognized by the exact script every PowPeg spend since the fork reveals, so only the keys in that script can spend a match: 5 of its 9, or 3 of its 4 emergency keys after a long timelock.</p>
 <p>Plumb 6 also refused payments back to the vanity address one of the transaction's inputs spends from, reading the zeros in its hash as data. Plumb 7&#39;s <code>-rejectfakeoutputs</code> counts nothing in an output that pays the script of a coin the transaction spends: the spend proved the key or hash in it is real, and fitting chosen data into one would take at least 2<sup>128</sup> tries. Those payments now grade clean. Plumb 10&#39;s <code>-rejectfakeoutputs</code> also skips the leading zero bytes of a hash or key, when there are seven or fewer, before it looks for repeated bytes, so a payment to an address whose hash or key starts with six or seven zero bytes is no longer refused. {vanity_line()}{local.MEASURED_ELSEWHERE}</p>
@@ -2245,7 +2245,7 @@ def about_page(idx, tip):
 <p>Protocols with defenders that do not pass have their case in the <a href="/guide/">field guide</a>, next to the reason they fail: inscriptions, Runes, JSON token messages, Stamps, Counterparty, Omni, BIP47 notifications, swap memos, and the tags Babylon, Core DAO and Stacks add. Babylon and Core DAO move real bitcoin to ordinary scripts, and that part passes; the tag beside it is a record for another chain.</p>
 <h2 id="known">How protocols are recognized</h2>
 <p>By exact scripts and tags, never by a guess about the content. A transaction that matches one of these and also carries other data, a runestone beside a Lightning close say, is graded on the data, and its page says which protocol matched. The PowPeg is pinned to its federation's exact script; the others are matched by template or tag, so a match says what the script is, not who holds the coins.</p>
-<div class="tw"><table><tr><th>Protocol, matched by</th><th class="r">Since the fork</th><th class="r">Gray</th><th class="r">Sewage</th></tr>{krows}</table></div>
+<div class="tw"><table><tr><th>Protocol, matched by</th><th class="r">{local.since_title()}</th><th class="r">Gray</th><th class="r">Sewage</th></tr>{krows}</table></div>
 <p class="small muted">Gray and Sewage count the matches the site lists under that grade. A match listed as sewage carried something the bar does not pass, such as a runestone beside it, or wrote bytes and paid nobody; the Liquid-layout emergency spend above is the one exception.</p>
 <h2>What we never show</h2>
 <p>The payload. No images, no text, no file names. A spam transaction gets its type, its size and where the bytes sit. Displaying the contents is the service the spammer paid for.</p>
@@ -2315,7 +2315,7 @@ def index_page(idx, tip):
 {dump}
 <div class="grid2" style="margin-top:22px"><div class="panel"><div class="kicker">Clean water roll, 7 days</div><p style="margin:0">{honor or "Nobody with ten or more blocks went the whole week without sewage."}</p>
 <p class="small muted" style="margin:8px 0 0">Ten or more blocks and not one sewage transaction.</p></div>
-<div class="panel"><div class="kicker">Since the fork</div><p style="margin:0"><b>{size(tall["sd"])}</b> of sewage payload in <b>{n(tall["sn"])}</b> transactions.
+<div class="panel"><div class="kicker">{local.since_title()}</div><p style="margin:0"><b>{size(tall["sd"])}</b> of sewage payload in <b>{n(tall["sn"])}</b> transactions.
 A Plumb node refuses <b>{pct(tall["psw"] / tall["sw"] if tall["sw"] else 0)}</b> of that block space. Stock Knots refuses {pct(tall["ksw"] / tall["sw"] if tall["sw"] else 0)}.</p>
 <p class="small muted" style="margin:8px 0 0"><a href="/guide/">What it is and what stops it &rarr;</a></p></div></div>
 {plumb_cta()}'''
@@ -2368,7 +2368,7 @@ def og_svg(kind, **k):
         else:
             name = f'<text x="70" y="230" font-family="IBM Plex Sans" font-weight="650" font-size="78" fill="{fg}">{esc(p["pool"][:22])}</text>'
         return (head + name +
-                f'<text x="70" y="296" font-family="IBM Plex Sans" font-size="34" fill="{mut}">Spam inspection report, {"last 30 days" if k["recent"] else "since the fork"}</text>'
+                f'<text x="70" y="296" font-family="IBM Plex Sans" font-size="34" fill="{mut}">Spam inspection report, {"last 30 days" if k["recent"] else local.since()}</text>'
                 f'<text x="70" y="400" font-family="IBM Plex Mono" font-weight="600" font-size="64" fill="{fg}">{esc(pct(p["share"], 2))}</text>'
                 f'<text x="70" y="450" font-family="IBM Plex Sans" font-size="32" fill="{mut}">of its block space is spam</text>'
                 f'<text x="70" y="540" font-family="IBM Plex Sans" font-size="32" fill="{fg}">{n(p["sn"])} spam transactions, {btc(p["sf"])} BTC in fees {"paid" if p["pool"].startswith(miner.DATUM_PREFIX) else "taken"}</text>'

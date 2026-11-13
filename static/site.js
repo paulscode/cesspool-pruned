@@ -1,6 +1,12 @@
 (function () {
   "use strict";
 
+  // Where this install's blocks start, and the words for it: "since the fork" or "since block N".
+  // site.py writes both on <body> for every page (local.body_attrs).
+  var SINCE = document.body.getAttribute("data-since") || "since the fork";
+  var FIRST = +document.body.getAttribute("data-fork") || 961640;
+  var BRAND = document.body.getAttribute("data-brand") || "cesspool";
+
   // Relative times: <time data-t="unix">
   function ago(t) {
     var s = Math.max(0, Date.now() / 1000 - t);
@@ -171,7 +177,7 @@
     }).then(function (where) {
       if (!where) return notFound(out, q);
       return getJSON("/d/b/" + where.h + ".json").then(function (b) {
-        if (!b && m) { out.textContent = ""; out.appendChild(el("p", { text: "There is no block " + where.h + " since the fork." })); return; }
+        if (!b && m) { out.textContent = ""; out.appendChild(el("p", { text: "There is no block " + where.h + " " + SINCE + "." })); return; }
         if (!b) return notFound(out, q);
         var tx = null;
         if (where.idx !== undefined) tx = where.idx === 0 ? b.cb : b.tx[where.idx - 1];
@@ -185,7 +191,7 @@
         }
         if (where.idx !== undefined) input.value = tx.id;
         if (location.pathname + location.search !== "/tx/" + tx.id) history.replaceState(null, "", "/tx/" + tx.id);
-        document.title = "Transaction " + tx.id.slice(0, 16) + "… · cesspool.lol";
+        document.title = "Transaction " + tx.id.slice(0, 16) + "… · " + BRAND;
         var hero = app.querySelector(".hero");
         if (hero) { hero.querySelector("h1").textContent = "Transaction"; var lede = hero.querySelector(".lede"); if (lede) lede.remove(); }
         render(out, tx, b, cat, app.getAttribute("data-plumb"));
@@ -195,8 +201,8 @@
 
   function notFound(out, q) {
     out.textContent = "";
-    out.appendChild(el("p", {}, "No transaction ", el("code", { text: q }), " in any block since the fork. ",
-      "cesspool covers every block from 961640 on. A transaction still waiting in the mempool, one in a block from before 961640, or one in a block from the last few minutes is not here."));
+    out.appendChild(el("p", {}, "No transaction ", el("code", { text: q }), " in any block " + SINCE + ". ",
+      "This install covers blocks from " + FIRST + " on. A transaction still waiting in the mempool, one in a block from before " + FIRST + ", or one in a block from the last few minutes is not here."));
   }
 
   // Your Blocks: /found/#<payout address, pool name or coinbase text>. The query lives in the fragment,
@@ -252,10 +258,10 @@
 
     function run(q) {
       input.value = q;
-      if (!q) { out.textContent = ""; document.title = "Your blocks · cesspool.lol"; return; }
+      if (!q) { out.textContent = ""; document.title = "Your blocks · " + BRAND; return; }
       if (/^\d+$/.test(q) || /^[0-9a-fA-F]{64}$/.test(q)) { go(q); return; }
       out.textContent = "Looking…";
-      document.title = q + " · Your blocks · cesspool.lol";
+      document.title = q + " · Your blocks · " + BRAND;
       var p = isAddress(q) ? byAddress(/^bc1/i.test(q) ? q.toLowerCase() : q) : byText(q);
       p.catch(function () { say("Could not load the index. Try again in a minute."); });
     }
@@ -316,7 +322,7 @@
         var d = r[0], rows = r[1] && r[1][a];
         if (!r[1]) throw new Error("no shard");
         if (!rows) {
-          say("No coinbase since the fork pays " + a + ". A pool that holds rewards and pays later never puts your address in a coinbase: look the pool up by name instead. If you run a DATUM gateway, your second coinbase tag finds your blocks.");
+          say("No coinbase " + SINCE + " pays " + a + ". A pool that holds rewards and pays later never puts your address in a coinbase: look the pool up by name instead. If you run a DATUM gateway, your second coinbase tag finds your blocks.");
           out.appendChild(addressLink(a));
           return null;
         }
@@ -354,7 +360,7 @@
       var p = g.pool, name = p[0], cls = p[2], all = p[3].length;
       if (name.indexOf("Unknown (") === 0) return "No pool is known for these blocks; the site names them by one of their payout addresses.";
       if (!all) return "";  // a name the cached index does not know yet
-      var of = " This address is in " + num(g.n) + " of the " + plural(all, "block") + " under that name since the fork.";
+      var of = " This address is in " + num(g.n) + " of the " + plural(all, "block") + " under that name " + SINCE + ".";
       if (cls === "coinbase") return name + " pays its miners in the coinbase, so these blocks paid this address a share, whoever found them." + of;
       if (cls === "finder") return "Each of these blocks pays whoever found it." + of;
       if (cls === "own") return "Solo blocks, paid to the miner's own address." + of;
@@ -381,20 +387,20 @@
       head.appendChild(el("h2", { cls: e.kind === "addr" ? "addr" : "" }, title, el(e.kind === "pool" ? "span" : "code", { text: e.name })));
       var lede = el("p", { cls: "muted" });
       if (e.kind === "pool") {
-        lede.appendChild(document.createTextNode(plural(hs.length, "block") + " since the fork, the last " + last + ", " + when(m[last][0]) + ". "));
+        lede.appendChild(document.createTextNode(plural(hs.length, "block") + " " + SINCE + ", the last " + last + ", " + when(m[last][0]) + ". "));
         var via = order.length ? order[0].via : 0;
         if (via) lede.appendChild(document.createTextNode(num(via) + " of them " + (via === 1 ? "was built by a DATUM miner's own gateway" : "were built by DATUM miners' own gateways") + " with the pool upstream, so the Hall of Shame counts " + (via === 1 ? "it" : "them") + " under DATUM miners via " + e.name + ". "));
         lede.appendChild(el("a", { href: "/pool/" + e.pool[1] + "/", text: "Inspection report for " + e.name }));
       } else if (e.kind === "text") {
-        lede.appendChild(document.createTextNode(plural(hs.length, "block") + " since the fork carry it in the coinbase, the last " + last + ", " + when(m[last][0]) + ". Anyone can write any text in a coinbase, so a tag is a claim, not proof."));
+        lede.appendChild(document.createTextNode(plural(hs.length, "block") + " " + SINCE + " carry it in the coinbase, the last " + last + ", " + when(m[last][0]) + ". Anyone can write any text in a coinbase, so a tag is a claim, not proof."));
       } else {
-        lede.appendChild(document.createTextNode(plural(hs.length, "block") + " since the fork pay this address in the coinbase, " + btc(sats) + " BTC in all, the last " + last + ", " + when(m[last][0]) + "."));
+        lede.appendChild(document.createTextNode(plural(hs.length, "block") + " " + SINCE + " pay this address in the coinbase, " + btc(sats) + " BTC in all, the last " + last + ", " + when(m[last][0]) + "."));
       }
       head.appendChild(lede);
       var tiles = el("div", { cls: "tiles" });
       tiles.appendChild(el("div", { cls: "tile" }, el("div", { cls: "v" }, el("span", { cls: "letter sm gr-" + L[1], text: L[1] })), el("div", { cls: "l", text: L[2] }), el("div", { cls: "s", text: "graded like a pool, over these blocks" })));
       tiles.appendChild(el("div", { cls: "tile" }, el("div", { cls: "v" + (sw ? " g-raw" : ""), text: pctOf(share) }), el("div", { cls: "l", text: "of their block space is sewage" })));
-      tiles.appendChild(el("div", { cls: "tile" }, el("div", { cls: "v", text: num(hs.length) }), el("div", { cls: "l", text: "blocks since the fork" }), el("div", { cls: "s", text: num(dirty) + " with sewage, " + num(pristine) + " pristine" })));
+      tiles.appendChild(el("div", { cls: "tile" }, el("div", { cls: "v", text: num(hs.length) }), el("div", { cls: "l", text: "blocks " + SINCE }), el("div", { cls: "s", text: num(dirty) + " with sewage, " + num(pristine) + " pristine" })));
       if (e.kind === "addr") tiles.appendChild(el("div", { cls: "tile" }, el("div", { cls: "v", text: btc(sats) }), el("div", { cls: "l", text: "BTC paid to it in coinbases" })));
       head.appendChild(tiles);
       var counted = hs.length === 1 ? "the one block" + (pristine ? ", a pristine one" : "")
@@ -469,7 +475,7 @@
 
     function run(q) {
       input.value = q;
-      if (!q) { out.textContent = ""; document.title = "Address lookup · cesspool.lol"; return; }
+      if (!q) { out.textContent = ""; document.title = "Address lookup · " + BRAND; return; }
       if (!isAddress(q)) {
         out.textContent = "";
         out.appendChild(el("p", { cls: "muted" }, "That is not a Bitcoin address. Your Blocks finds block heights, transaction ids, pool names and coinbase tags: ",
@@ -478,7 +484,7 @@
       }
       var a = /^bc1/i.test(q) ? q.toLowerCase() : q;
       out.textContent = "Looking…";
-      document.title = a + " · Address lookup · cesspool.lol";
+      document.title = a + " · Address lookup · " + BRAND;
       checksum(a).then(function (ok) {
         if (!ok) { say("That address does not check out: a character is wrong, missing or extra somewhere."); return; }
         return Promise.all([getJSON("/d/w/" + shard(a) + ".json"), getJSON("/d/a/" + shard(a) + ".json")]).then(function (r) {
@@ -539,7 +545,7 @@
         var tiles = el("div", { cls: "tiles" });
         ROLES.forEach(function (x) {
           if (count[x[0]]) tiles.appendChild(el("div", { cls: "tile" }, el("div", { cls: "v", text: num(count[x[0]]) }), el("div", { cls: "l", text: x[1] }),
-            el("div", { cls: "s", text: (count[x[0]] === 1 ? "sewage transaction" : "sewage transactions") + " since the fork" })));
+            el("div", { cls: "s", text: (count[x[0]] === 1 ? "sewage transaction" : "sewage transactions") + " " + SINCE })));
         });
         head.appendChild(tiles);
         var why;
@@ -551,7 +557,7 @@
       if (paid.length) {
         var sats = 0;
         paid.forEach(function (x) { sats += x[1]; });
-        head.appendChild(el("p", {}, "Coinbases pay this address in " + plural(paid.length, "block") + " since the fork, " + (sats / 1e8).toFixed(8).replace(/(\.\d\d\d\d\d*?)0+$/, "$1") + " BTC in all. ",
+        head.appendChild(el("p", {}, "Coinbases pay this address in " + plural(paid.length, "block") + " " + SINCE + ", " + (sats / 1e8).toFixed(8).replace(/(\.\d\d\d\d\d*?)0+$/, "$1") + " BTC in all. ",
           el("a", { href: "/found/#" + encodeURIComponent(a), text: "Those blocks on Your Blocks" }), "."));
       }
       var copy = el("button", { cls: "copy", text: "Copy share link" });
